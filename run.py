@@ -57,15 +57,11 @@ def train(
     # 3. configure lora
     if args.peft.use_peft:
         logger.info(f"Detected PEFT configuration, configuring lora")
-        lora_config = LoraConfig(
-            task_type=args.peft.task_type,
-            use_dora=args.peft.use_dora,
-            r=args.peft.r,
-            lora_alpha=args.peft.lora_alpha,
-            lora_dropout=args.peft.lora_dropout,
-            target_modules=args.peft.target_modules,
-        )
-        model = get_peft_model(model, lora_config)
+        from open_tinker.lora.adapter import apply_lora, apply_adalora
+        if args.peft.use_adalora:
+            model = apply_adalora(model, args)
+        else:
+            model = apply_lora(model, args)
         logger.info(f"Lora configured successfully")
     
     model.print_trainable_parameters()

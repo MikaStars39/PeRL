@@ -1,3 +1,9 @@
+###
+```
+pip install trl
+pip install accelerate
+```
+
 ### Flash Attention
 
 ```
