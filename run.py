@@ -2,7 +2,7 @@
 import torch
 import os
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import set_seed, AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
 from trl import GRPOConfig, GRPOTrainer
 from fire import Fire
@@ -14,11 +14,10 @@ from open_tinker.utils.utils import (
 from open_tinker.utils.logging import init_logger, logger
 from open_tinker.trl_trainer.grpo import format_reward, accuracy_reward
 
-def train(
+def fuzzy_jobs(
     config_path: str,
     output_dir: str
 ):
-    # 0. parse args and prepare logger
     args = parse_toml_to_args(config_path)
     init_logger()
     args.training.output_dir = output_dir
@@ -26,6 +25,16 @@ def train(
         os.makedirs(output_dir)
     else:
         logger.info(f"Output directory {output_dir} already exists, using it")
+    set_seed(args.training.seed)
+    
+    return args
+
+def train(
+    config_path: str,
+    output_dir: str
+):
+    # 0. parse args and prepare logger
+    args = fuzzy_jobs(config_path, output_dir)
 
     # 1. load dataset
     logger.info(f"Loading dataset from {args.dataset.dataset_name_or_path}")

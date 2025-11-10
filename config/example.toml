@@ -26,6 +26,7 @@
     save_strategy = "steps"
     save_steps = 10
     use_vllm = false # do not use vllm and rollout w/ model.generate instead
+    seed = 42
 
 [dataset]
     dataset_name_or_path = "AI-MO/NuminaMath-TIR"
