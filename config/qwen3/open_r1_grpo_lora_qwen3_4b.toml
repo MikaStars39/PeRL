@@ -19,7 +19,7 @@
 [training]
     learning_rate = 1e-5
     output_dir = ""
-    run_name = "grpo-lora-qwen3-0.6b"
+    run_name = "grpo-lora-qwen3-4B"
     remove_unused_columns = false
     gradient_accumulation_steps = 16
     num_train_epochs = 1

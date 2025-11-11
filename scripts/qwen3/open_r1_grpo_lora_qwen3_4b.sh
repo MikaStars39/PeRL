@@ -1,6 +1,7 @@
 # OUTPUT_DIR=outputs/grpo_lora_qwen3_4b_$(date +%Y%m%d_%H%M%S)
+EXPERIMENT_NAME=open_r1_grpo_lora_qwen3_4b_debug
 OUTPUT_DIR=outputs/debug
-LOG_FILE=${OUTPUT_DIR}/output.log
+LOG_FILE=${OUTPUT_DIR}/output_${EXPERIMENT_NAME}_$(date +%Y%m%d_%H%M%S).log
 
 mkdir -p ${OUTPUT_DIR}
 
