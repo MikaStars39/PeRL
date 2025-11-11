@@ -18,13 +18,13 @@
 [training]
     learning_rate = 1e-6
     output_dir = ""
-    run_name = "grpo-lora-qwen3-0.6b"
+    run_name = "grpo-lora-qwen3-8b"
     remove_unused_columns = false
     gradient_accumulation_steps = 16
     num_train_epochs = 1
-    max_completion_length = 64
+    max_completion_length = 2056
     num_generations = 4
-    max_prompt_length = 128
+    max_prompt_length = 8192
     logging_steps = 10
     save_strategy = "steps"
     save_steps = 10
