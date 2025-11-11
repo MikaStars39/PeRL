@@ -9,3 +9,4 @@ torch
 transformers
 trl
 trackio
+tomli
