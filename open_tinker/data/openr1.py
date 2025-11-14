@@ -3,7 +3,7 @@ from latex2sympy2_extended import NormalizationConfig
 from math_verify import LatexExtractionConfig, parse, verify
 from datasets import load_dataset
 
-from .system_prompts import SYSTEM_PROMPT
+from .system_prompts import make_conversation
 
 # reward function from https://huggingface.co/datasets/burtenshaw/lora-without-regrets/blob/main/grpo.py
 def strip_reasoning_accuracy_reward(
@@ -88,13 +88,6 @@ def load_openr1_dataset(dataset_name_or_path: str, example_numbers: int = None):
     dataset = load_dataset(
         dataset_name_or_path, split="train"
     )
-    
-    def make_conversation(example):
-        prompt = [
-            {"role": "system", "content": SYSTEM_PROMPT}, 
-            {"role": "user", "content": example["problem"]}
-        ]
-        return {"prompt": prompt}
 
     dataset = dataset.map(make_conversation)
 

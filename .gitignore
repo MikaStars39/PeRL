@@ -1,6 +1,6 @@
 # Byte-compiled / optimized / DLL files
 .DS_Store
-
+completion_samples/*
 __pycache__/
 *.py[cod]
 *$py.class
@@ -39,7 +39,7 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 wandb
-
+debug.py
 # Unit test / coverage reports
 htmlcov/
 .tox/

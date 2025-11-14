@@ -1,11 +1,20 @@
 ## All LoRAs work?
 
+https://github.com/Yuheng2000/Awesome-LoRA
+
 - LoRA ✅
 - DoRA ✅
 - MiSS ✅
 - AdaLoRA ❌
-- VeRA
+- VeRA ✅
+- PiSSA ✅ 
 - RandLoRA
+- P-tuning
+- Layernorm tuning
+- DeLoRA
+- X-LoRA
+- LoKr
+- 
 
 ## Env Settings
 

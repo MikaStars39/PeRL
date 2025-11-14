@@ -1,8 +1,23 @@
 from .openr1 import load_openr1_dataset
 from .numina import load_numina_dataset
+from .tinyzero import load_tinyzero_dataset
+from .count_down import load_count_down_dataset
 
-def load_dataset(dataset_name_or_path: str, example_numbers: int = None):
-    if "NuminaMath-TIR" in dataset_name_or_path:
+from transformers import AutoTokenizer
+
+def load_dataset(dataset_name_or_path: str, example_numbers: int = None, tokenizer: AutoTokenizer = None):
+    dataset_name_lower = dataset_name_or_path.lower()
+    if "numinamath-tir" in dataset_name_lower:
         return load_numina_dataset(dataset_name_or_path, example_numbers)
-    elif "OpenR1" in dataset_name_or_path:
+    elif "openr1" in dataset_name_lower:
         return load_openr1_dataset(dataset_name_or_path, example_numbers)
+    elif "tinyzero" in dataset_name_lower:
+        return load_tinyzero_dataset(dataset_name_or_path, example_numbers)
+    elif "countdown" in dataset_name_lower:
+        return load_count_down_dataset(
+            dataset_name_or_path, 
+            example_numbers, 
+            tokenizer
+        )
+    else:
+        raise ValueError(f"暂不支持的数据集: {dataset_name_or_path}")

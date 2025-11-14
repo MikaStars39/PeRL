@@ -4,3 +4,10 @@ SYSTEM_PROMPT = (
     "process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., "
     "<think> reasoning process here </think><answer> answer here </answer>"
 )
+
+def make_conversation(example):
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT}, 
+        {"role": "user", "content": example["problem"]}
+    ]
+    return {"prompt": prompt}
