@@ -1,0 +1,10 @@
+model_parameters:
+    model_name: "openai/outputs/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024"
+    base_url: "http://localhost:8000/v1"
+    api_key: "EMPTY"
+    concurrent_requests: 10
+    generation_parameters:
+      temperature: 0.6
+      top_p: 0.95
+      max_new_tokens: 20000
+      seed: 42
