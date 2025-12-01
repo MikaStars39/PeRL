@@ -96,7 +96,7 @@ def train(
     if args.peft.use_peft:
         logger.info(f"Detected PEFT configuration, configuring lora")
         from perl.lora.adapter import apply_lora
-        model = apply_lora(model, args)
+        optimizer, model = apply_lora(model, args)
         logger.info(f"Lora configured successfully")
 
     # 4.Training configuration
@@ -111,7 +111,8 @@ def train(
         processing_class=tokenizer,
         reward_funcs=reward_functions,
         args=training_args,
-        train_dataset=train_dataset
+        train_dataset=train_dataset,
+        optimizers=(optimizer, None) if optimizer is not None else (None, None)
     )
     trainer.train()
     logger.info(f"Training completed successfully")

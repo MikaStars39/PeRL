@@ -9,7 +9,7 @@ def apply_lora(model, args):
             target_modules=args.peft.target_modules,
             lora_dropout=args.peft.lora_dropout,
         )
-        return get_peft_model(model, config)
+        return None, get_peft_model(model, config)
     elif args.peft.type == "dora":
         from peft import LoraConfig, get_peft_model
         config = LoraConfig(
@@ -21,15 +21,15 @@ def apply_lora(model, args):
             target_modules=args.peft.target_modules,
             lora_dropout=args.peft.lora_dropout,
         )
-        return get_peft_model(model, config)
+        return None, get_peft_model(model, config)
     elif args.peft.type == "vera":
         from peft import VeraConfig, get_peft_model
         config = VeraConfig(r=args.peft.r)
-        return get_peft_model(model, config)
+        return None, get_peft_model(model, config)
     elif args.peft.type == "miss":
         from peft import MissConfig, get_peft_model
         config = MissConfig(r=args.peft.r)
-        return get_peft_model(model, config)
+        return None, get_peft_model(model, config)
     elif args.peft.type == "pissa":
         from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
@@ -41,10 +41,10 @@ def apply_lora(model, args):
             target_modules=args.peft.target_modules,
             task_type=args.peft.task_type,
         )
-        return get_peft_model(model, lora_config)
+        return None, get_peft_model(model, lora_config)
     elif args.peft.type == "milora":
         from .milora import add_svd_initialized_lora
-        return add_svd_initialized_lora(
+        return None, add_svd_initialized_lora(
             model=model,
             rank=args.peft.r,
         )
@@ -53,7 +53,7 @@ def apply_lora(model, args):
         peft_config = LNTuningConfig(
             task_type=TaskType.CAUSAL_LM,
         )
-        return get_peft_model(model, peft_config)
+        return None, get_peft_model(model, peft_config)
     elif args.peft.type == "adalora":
         from peft import AdaLoraConfig, get_peft_model
         config = AdaLoraConfig(
@@ -65,16 +65,61 @@ def apply_lora(model, args):
             lora_dropout=args.peft.lora_dropout,
             total_step=args.training.max_steps,
         )
-        return get_peft_model(model, config)
+        return None, get_peft_model(model, config)
     elif args.peft.type == "IA3":
         from peft import IA3Config, get_peft_model, TaskType
         config = IA3Config(task_type=TaskType.CAUSAL_LM)
-        return get_peft_model(model, config)
+        return None, get_peft_model(model, config)
     elif args.peft.type == "milora_plus":
         from .milora_plus import add_svd_initialized_lora
-        return add_svd_initialized_lora(
+        return None, add_svd_initialized_lora(
             model=model,
             rank=args.peft.r,
         )
+    elif args.peft.type == "lorafa":
+        from peft import LoraConfig, get_peft_model
+        from peft.optimizers import create_lorafa_optimizer
+
+        config = LoraConfig(
+            peft_type="LORA",
+            task_type=args.peft.task_type,
+            r=args.peft.r,
+            lora_alpha=args.peft.lora_alpha,
+            target_modules=args.peft.target_modules,
+            lora_dropout=args.peft.lora_dropout,
+        ) 
+
+        model = get_peft_model(model, config)
+            
+        optimizer = create_lorafa_optimizer(
+            model=model,
+            r=args.peft.r,
+            lora_alpha=args.peft.lora_alpha,
+            lr=args.training.learning_rate,
+        )
+        return optimizer, model
+    elif args.peft.type == "lora_plus":
+        from peft import LoraConfig, get_peft_model
+        from torch.optim import AdamW
+        from peft.optimizers import create_loraplus_optimizer
+        
+        # First create the LoRA model
+        config = LoraConfig(
+            peft_type="LORA",
+            task_type=args.peft.task_type,
+            r=args.peft.r,
+            lora_alpha=args.peft.lora_alpha,
+            target_modules=args.peft.target_modules,
+            lora_dropout=args.peft.lora_dropout,
+        )
+        model = get_peft_model(model, config)
+        
+        # Then create the LoraPlus optimizer with different learning rates for A and B
+        optimizer = create_loraplus_optimizer(
+            model=model,
+            optimizer_cls=AdamW,
+            lr=args.training.learning_rate,
+        )
+        return optimizer, model
     else:
         raise ValueError(f"Unsupported PEFT type: {args.peft.type}")
