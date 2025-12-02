@@ -1,23 +1,36 @@
 #!/bin/bash
 
-# 1. 定义模型列表 (可以是 HuggingFace ID，也可以是本地绝对路径)
-MODELS=(
-    "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-    # "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B" # 可以在这里加更多模型
-)
+# Automatic evaluation script for all checkpoints in a directory
+# Usage: bash scripts/eval/eval.sh <checkpoints_dir>
+# Example: bash scripts/eval/eval.sh outputs/train/my_experiment
 
-# 2. 定义评测任务 (你提供的任务字符串)
-TASKS="aime24_gpassk,math_500,aime2025@k=2,gpqa:diamond@k=2"
+set -e
 
-# 3. 定义配置
+# Check arguments
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <checkpoints_dir>"
+    echo "  checkpoints_dir: Directory containing checkpoint-* subdirectories"
+    exit 1
+fi
+
+CHECKPOINTS_DIR="$1"
 PORT=8001
 GPU_ID=0
-CONFIG_PATH="scripts/eval/eval_template.yaml" # 指向上面创建的 yaml
+TENSOR_PARALLEL_SIZE=8
+EVAL_CONFIG="scripts/eval/eval_test.yaml"
+EVAL_TASKS="math_500_avg_4@n=4,minerva_pass_4@k=4,amc23_pass_32@k=32,aime24_pass_32@k=32,aime25_pass_32@k=32,gpqa_diamond_pass_4@k=4,olympiadbench_pass_4@k=4"
+CUSTOM_TASKS="config/math.py"
 
-# --- 清理函数 (Ctrl+C 中断时触发) ---
+# Check if checkpoints directory exists
+if [ ! -d "$CHECKPOINTS_DIR" ]; then
+    echo "Error: Directory $CHECKPOINTS_DIR does not exist"
+    exit 1
+fi
+
+# Cleanup function for Ctrl+C interruption
 cleanup() {
     if [ -n "$SERVER_PID" ]; then
-        echo ">>> 正在强制关闭 vLLM (PID: $SERVER_PID)..."
+        echo ">>> Killing vLLM server (PID: $SERVER_PID)..."
         kill $SERVER_PID 2>/dev/null
         wait $SERVER_PID 2>/dev/null
     fi
@@ -25,75 +38,104 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM
 
-# --- 主循环 ---
-for MODEL in "${MODELS[@]}"; do
-    echo "=================================================="
-    echo "正在评测模型: $MODEL"
-    echo "=================================================="
+# Function to wait for vLLM server to be ready
+wait_for_vllm() {
+    local max_retries=120  # Wait up to 10 minutes (120 * 5s)
+    local count=0
+    
+    echo ">>> Waiting for vLLM server to be ready..."
+    while [ $count -lt $max_retries ]; do
+        if curl -s http://localhost:$PORT/health > /dev/null 2>&1; then
+            echo ">>> vLLM server is ready!"
+            return 0
+        fi
+        
+        # Check if process is still alive
+        if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo ">>> Error: vLLM process died unexpectedly!"
+            return 1
+        fi
+        
+        sleep 5
+        ((count++))
+        echo -n "."
+    done
+    
+    echo ""
+    echo ">>> Error: vLLM server failed to start within timeout"
+    return 1
+}
 
-    # 1. 启动 vLLM
-    # 注意添加了 --served-model-name local-model
-    # 这样无论实际加载什么模型，API 只要请求 "local-model" 都能通
+# Main loop: iterate over all checkpoint directories
+for CHECKPOINT_DIR in "$CHECKPOINTS_DIR"/checkpoint-*; do
+    # Skip if not a directory
+    if [ ! -d "$CHECKPOINT_DIR" ]; then
+        continue
+    fi
+    
+    CHECKPOINT_NAME=$(basename "$CHECKPOINT_DIR")
+    echo "=========================================="
+    echo "Evaluating: $CHECKPOINT_NAME"
+    echo "=========================================="
+    
+    # Load checkpoint as full model
+    MODEL_PATH="$CHECKPOINT_DIR"
+    
+    # Start vLLM server in background
+    echo ">>> Starting vLLM server..."
     CUDA_VISIBLE_DEVICES=$GPU_ID python -m vllm.entrypoints.openai.api_server \
-        --model "$MODEL" \
+        --model "$MODEL_PATH" \
         --served-model-name "local-model" \
         --max-model-len 32768 \
         --dtype bfloat16 \
-        --gpu-memory-utilization 0.9 \
+        --gpu-memory-utilization 0.95 \
         --port $PORT \
-        --trust-remote-code &
-
+        --trust-remote-code \
+        --tensor-parallel-size $TENSOR_PARALLEL_SIZE &
+    
     SERVER_PID=$!
-    echo ">>> vLLM 已后台启动，PID: $SERVER_PID"
-
-    # 2. 健康检查循环 (等待服务就绪)
-    echo ">>> 等待服务就绪 (Port: $PORT)..."
-    MAX_RETRIES=60 # 等待 5分钟 (60 * 5s)
-    COUNT=0
-    SERVER_READY=false
-
-    while [ $COUNT -lt $MAX_RETRIES ]; do
-        # 检查 vLLM 的 health 接口 (OpenAI 兼容接口通常在 /health 或 /v1/models)
-        if curl -s http://localhost:$PORT/health > /dev/null; then
-            SERVER_READY=true
-            break
-        fi
-        
-        # 检查进程是否还活着
-        if ! kill -0 $SERVER_PID 2>/dev/null; then
-            echo ">>> 错误：vLLM 进程意外退出！"
-            break
-        fi
-
+    echo ">>> vLLM server started (PID: $SERVER_PID)"
+    
+    # Wait for server to be ready
+    if ! wait_for_vllm; then
+        echo ">>> Skipping $CHECKPOINT_NAME due to vLLM startup failure"
+        kill $SERVER_PID 2>/dev/null
+        wait $SERVER_PID 2>/dev/null
         sleep 5
-        ((COUNT++))
-        echo -n "."
-    done
-    echo ""
-
-    if [ "$SERVER_READY" = true ]; then
-        echo ">>> 服务已就绪，开始运行 LightEval..."
-        
-        # 3. 运行 LightEval
-        # 使用你提供的命令，yaml 已经在上面准备好了
-        lighteval endpoint litellm \
-            "$CONFIG_PATH" \
-            "$TASKS" \
-            --output_dir "./results/${MODEL##*/}" # 自动根据模型名生成结果目录
-        
-        echo ">>> 模型 $MODEL 评测完成。"
-    else
-        echo ">>> 服务启动超时或失败，跳过此模型。"
+        continue
     fi
+    
+    # Run evaluation
+    echo ">>> Running evaluation..."
+    OUTPUT_LOG="$CHECKPOINT_DIR/eval_output.log"
 
-    # 4. 停止 vLLM
-    echo ">>> 关闭 vLLM 服务..."
+    lighteval endpoint litellm \
+        "$EVAL_CONFIG" \
+        "$EVAL_TASKS" \
+        --custom-tasks "$CUSTOM_TASKS" \
+        --output_dir "$CHECKPOINT_DIR/eval_results" \
+        &> "$OUTPUT_LOG"
+    
+    if [ $? -eq 0 ]; then
+        echo ">>> Evaluation completed successfully"
+        echo ">>> Results saved to: $CHECKPOINT_DIR/eval_results"
+        echo ">>> Log saved to: $OUTPUT_LOG"
+    else
+        echo ">>> Error: Evaluation failed. Check log at $OUTPUT_LOG"
+    fi
+    
+    # Stop vLLM server
+    echo ">>> Stopping vLLM server..."
     kill $SERVER_PID
     wait $SERVER_PID 2>/dev/null
     
-    # 5. 等待显存释放 (非常重要)
-    echo ">>> 等待显存释放..."
+    # Wait for GPU memory to be released
+    echo ">>> Waiting for GPU memory to be released..."
     sleep 10
+    
+    echo ""
 done
 
-echo "所有评测任务结束。"
+echo "=========================================="
+echo "All evaluations completed!"
+echo "=========================================="
