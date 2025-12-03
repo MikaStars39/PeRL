@@ -6,7 +6,8 @@ huggingface-hub
 math-verify
 torch
 transformers
-trl
+trl[vllm]
 trackio
 tomli
 peft
+wandb

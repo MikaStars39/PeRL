@@ -20,7 +20,7 @@ def init_logger() -> None:
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     formatter = logging.Formatter(
-        "[OpenTinker] %(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        "[PeRL] %(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     ch.setFormatter(formatter)
     logger.addHandler(ch)
