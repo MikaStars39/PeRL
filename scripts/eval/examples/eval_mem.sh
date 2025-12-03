@@ -17,14 +17,14 @@ PROJECT_DIR="/root/project/perl"
 MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/Qwen3-4B-Thinking-2507"
 ADAPTER_PATH=""
 RESULT_DIR="${PROJECT_DIR}/results/qwen3-4b-thinking-2507"
-DATASET="HuggingFaceH4/aime_2024"
+DATASET="aime2024,aime2025"
 
 /root/miniconda3/envs/perl/bin/python "${PROJECT_DIR}/scripts/eval/eval.py" \
   --result-dir "${RESULT_DIR}" \
   --model "${MODEL_PATH}" \
   --adapter "${ADAPTER_PATH}" \
   --dataset "${DATASET}" \
-  --rollout-n 64 \
+  --rollout-n 4 \
   --serve-port 8000 \
   --dp-size 8 \
   --tp-size 1 \

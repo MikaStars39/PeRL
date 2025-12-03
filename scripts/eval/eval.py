@@ -8,6 +8,7 @@
 import argparse
 import asyncio
 import atexit
+import importlib.util
 import json
 import logging
 import os
@@ -19,7 +20,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple, Optional
 import math
 
 try:
@@ -116,7 +117,7 @@ def parse_args() -> Tuple[argparse.Namespace, List[str], List[str]]:
     parser.add_argument("--result-dir", required=True, help="中间过程与结果输出目录。")
     parser.add_argument("--model", required=True, help="基础模型名称或路径。")
     parser.add_argument("--adapter", default="", help="LoRA/PEFT adapter路径，留空表示不合并。")
-    parser.add_argument("--dataset", default="HuggingFaceH4/aime_2024", help="要评测的数据集，英文逗号分隔。")
+    parser.add_argument("--dataset", default="aime2024", help="要评测的数据集缩写，英文逗号分隔（如：aime2024）。")
     parser.add_argument("--rollout-n", type=int, default=1, help="每个sample生成多少次rollout。")
     parser.add_argument("--serve-port", type=int, default=8000, help="第一个vLLM后端端口号。")
     parser.add_argument("--dp-size", type=int, default=1, help="数据并行后端数量（启动多个vLLM）。")
@@ -379,6 +380,58 @@ def load_dataset_by_name(name: str, split: str):
     return load_dataset(name, split=split)
 
 
+def load_task_module(task_abbr: str) -> Any:
+    """
+    根据任务缩写动态加载对应的任务模块。
+    实现方案：根据缩写（如aime2024）动态加载tasks/{aime2024}.py脚本中的函数。
+    简化实现：将项目根目录添加到sys.path，使相对导入能够正常工作。
+    
+    Args:
+        task_abbr: 任务缩写，如 "aime2024"
+    
+    Returns:
+        加载的任务模块对象
+    
+    Raises:
+        FileNotFoundError: 如果任务文件不存在
+        ImportError: 如果模块加载失败
+    """
+    # 获取当前脚本所在目录和项目根目录
+    current_dir = Path(__file__).parent  # scripts/eval
+    project_root = current_dir.parent.parent  # 项目根目录（包含scripts的目录）
+    task_file = current_dir / "tasks" / f"{task_abbr}.py"
+    
+    if not task_file.exists():
+        raise FileNotFoundError(f"任务文件不存在: {task_file}")
+    
+    # 将项目根目录添加到sys.path（如果还没有的话），这样相对导入就能正常工作
+    project_root_str = str(project_root)
+    if project_root_str not in sys.path:
+        sys.path.insert(0, project_root_str)
+    
+    # 使用importlib动态加载模块
+    module_name = f"scripts.eval.tasks.{task_abbr}"
+    spec = importlib.util.spec_from_file_location(module_name, task_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载任务模块: {task_file}")
+    
+    module = importlib.util.module_from_spec(spec)
+    # 设置__package__属性，使相对导入能够正常工作
+    module.__package__ = "scripts.eval.tasks"
+    module.__name__ = module_name
+    
+    # 执行模块代码
+    spec.loader.exec_module(module)
+    
+    # 验证必需的函数是否存在
+    required_functions = ["load_dataset", "prepare_prompt", "score_response"]
+    for func_name in required_functions:
+        if not hasattr(module, func_name):
+            raise ImportError(f"任务模块 {task_abbr} 缺少必需的函数: {func_name}")
+    
+    return module
+
+
 def generate_with_vllm(prompt: str, port: int, args: argparse.Namespace) -> str:
     """同步版本的vLLM生成函数（保留用于向后兼容）。"""
     url = f"http://127.0.0.1:{port}/v1/chat/completions"
@@ -450,6 +503,7 @@ def save_text(path: Path, text: str) -> None:
 
 async def evaluate_dataset(
     dataset_name: str,
+    task_module: Any,
     args: argparse.Namespace,
     ports: List[int],
     logger: logging.Logger,
@@ -471,61 +525,37 @@ async def evaluate_dataset(
         except Exception as exc:  # noqa: BLE001
             logger.error("读取已有结果失败，将重新评测。错误：%s", exc)
 
-    # 用户需求：删除 --dataset-split 参数，默认使用 test，不存在则通过 logger.warning 报错并回退到 train。
-    split = "test"
-    try:
-        logger.info("加载数据集 %s split=%s", dataset_name, split)
-        ds = load_dataset_by_name(dataset_name, split)
-    except ValueError as exc:
-        logger.warning(
-            "数据集 %s 不存在 split=%s，将回退到 split=train。原始错误：%s",
-            dataset_name,
-            split,
-            exc,
-        )
-        split = "train"
-        logger.info("加载数据集 %s split=%s", dataset_name, split)
-        ds = load_dataset_by_name(dataset_name, split)
+    # 使用任务模块中的load_dataset函数加载数据集
+    ds = task_module.load_dataset_from_hf()
 
     # 为每个DP端口创建信号量，限制并发请求数
     max_concurrent_per_dp = max(1, args.max_num_request_per_dp)
     semaphores: Dict[int, asyncio.Semaphore] = {port: asyncio.Semaphore(max_concurrent_per_dp) for port in ports}
     logger.info("每个DP端口的最大并发请求数：%d", max_concurrent_per_dp)
 
-    # 收集所有需要生成的任务
+    # 收集所有需要处理的任务
     # (problem_id, rollout_id, prompt, output_path, port_idx, sample)
-    tasks_to_generate: List[Tuple[int, int, str, Path, int, Dict[str, Any]]] = []
-    records: List[Dict[str, Any]] = []
+    tasks_to_process: List[Tuple[int, int, str, Path, int, Dict[str, Any]]] = []
+    cached_count = 0
     ports_cycle = len(ports)
 
     for idx, sample in enumerate(ds):
-        if args.max_samples is not None and idx >= args.max_samples:
-            logger.info("命中max_samples=%d，提前结束。", args.max_samples)
-            break
-        prompt = prepare_prompt(sample)
+        # 使用任务模块中的prepare_prompt函数
+        prompt = task_module.prepare_prompt(sample)
         problem_dir = outputs_dir / f"{idx:06d}"
         for rollout_id in range(args.rollout_n):
             output_path = problem_dir / f"rollout_{rollout_id:03d}.txt"
             port_idx = (idx * args.rollout_n + rollout_id) % ports_cycle
-            port = ports[port_idx]
-
             if output_path.exists() and output_path.stat().st_size > 0:
-                response = output_path.read_text(encoding="utf-8")
-                logger.info("复用缓存结果：%s", output_path)
-                score = score_response(prompt, response, sample)
-                records.append(
-                    {
-                        "problem_id": idx,
-                        "rollout_id": rollout_id,
-                        "prompt": prompt,
-                        "response": response,
-                        "score": score,
-                    }
-                )
-            else:
-                tasks_to_generate.append((idx, rollout_id, prompt, output_path, port_idx, sample))
+                cached_count += 1
+            tasks_to_process.append((idx, rollout_id, prompt, output_path, port_idx, sample))
 
-    logger.info("需要生成的请求数：%d（已缓存：%d）", len(tasks_to_generate), len(records))
+    logger.info(
+        "需要处理的请求总数：%d（已存在缓存：%d，需新生成：%d）",
+        len(tasks_to_process),
+        cached_count,
+        len(tasks_to_process) - cached_count,
+    )
 
     # 异步生成函数
     async def generate_one_task(
@@ -537,39 +567,65 @@ async def evaluate_dataset(
         sample: Dict[str, Any],
         session: aiohttp.ClientSession,
     ) -> Dict[str, Any]:
-        port = ports[port_idx]
-        semaphore = semaphores[port]
-        async with semaphore:  # 限制每个DP的并发数
-            try:
-                logger.info("向端口%d请求生成，problem=%06d rollout=%03d", port, problem_id, rollout_id)
-                response = await generate_with_vllm_async(session, prompt, port, args)
-                save_text(output_path, response)
-                score = score_response(prompt, response, sample)
-                return {
-                    "problem_id": problem_id,
-                    "rollout_id": rollout_id,
-                    "prompt": prompt,
-                    "response": response,
-                    "score": score,
-                }
-            except Exception as exc:  # noqa: BLE001
-                logger.error("生成失败 problem=%06d rollout=%03d port=%d: %s", problem_id, rollout_id, port, exc)
-                return {
-                    "problem_id": problem_id,
-                    "rollout_id": rollout_id,
-                    "prompt": prompt,
-                    "response": "",
-                    "score": 0.0,
-                }
+        response = ""
+        # 用户要求：若输出文件存在则在此处直接复用并跳过generate_with_vllm_async，避免在主循环重复写评分逻辑。
+        if output_path.exists() and output_path.stat().st_size > 0:
+            response = output_path.read_text(encoding="utf-8")
+            logger.info("复用缓存结果：%s", output_path)
+        else:
+            port = ports[port_idx]
+            semaphore = semaphores[port]
+            async with semaphore:  # 限制每个DP的并发数
+                try:
+                    logger.info("向端口%d请求生成，problem=%06d rollout=%03d", port, problem_id, rollout_id)
+                    response = await generate_with_vllm_async(session, prompt, port, args)
+                    # 实现方案：在调用score_response之前先保存响应到文件，确保即使score_response报错也能保留响应
+                    save_text(output_path, response)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("生成响应失败 problem=%06d rollout=%03d port=%d: %s", problem_id, rollout_id, port, exc)
+                    # 如果生成失败，response为空字符串，但也要保存（可能是空文件）
+                    if response:
+                        save_text(output_path, response)
+                    return {
+                        "problem_id": problem_id,
+                        "rollout_id": rollout_id,
+                        "prompt": prompt,
+                        "response": response,
+                        "score": 0.0,
+                        "details": {},
+                    }
+        
+        # 响应已保存或来自缓存，现在尝试评分
+        score = 0.0
+        details = {}
+        try:
+            # 使用任务模块中的score_response函数
+            score_result = task_module.score_response(prompt, response, sample)
+            # 兼容返回元组或单个值的情况
+            if isinstance(score_result, tuple):
+                score, details = score_result
+            else:
+                score = score_result
+                details = {}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("评分失败 problem=%06d rollout=%03d，响应已保存，使用默认分数。错误：%s", problem_id, rollout_id, exc)
+        
+        return {
+            "problem_id": problem_id,
+            "rollout_id": rollout_id,
+            "prompt": prompt,
+            "response": response,
+            "score": score,
+            "details": details,
+        }
 
     # 创建aiohttp会话并并发执行所有任务
     async with aiohttp.ClientSession() as session:
         tasks = [
             generate_one_task(problem_id, rollout_id, prompt, output_path, port_idx, sample, session)
-            for problem_id, rollout_id, prompt, output_path, port_idx, sample in tasks_to_generate
+            for problem_id, rollout_id, prompt, output_path, port_idx, sample in tasks_to_process
         ]
-        generated_records = await asyncio.gather(*tasks)
-        records.extend(generated_records)
+        records = await asyncio.gather(*tasks)
 
     # 按problem_id和rollout_id排序，确保结果顺序一致
     records.sort(key=lambda x: (x["problem_id"], x["rollout_id"]))
@@ -645,11 +701,19 @@ def main() -> None:
     datasets_to_run = [item.strip() for item in args.dataset.split(",") if item.strip()]
     with StageContext(logger, 3, "数据集评测与缓存/生成"):
         async def run_evaluations():
-            for name in datasets_to_run:
-                logger.info("🧪 开始评测数据集：%s", name)
-                records = await evaluate_dataset(name, args, ports, logger)
-                all_records[name] = records
-                logger.info("✅ 完成评测数据集：%s", name)
+            for task_abbr in datasets_to_run:
+                logger.info("🧪 开始评测数据集：%s", task_abbr)
+                try:
+                    # 动态加载任务模块
+                    task_module = load_task_module(task_abbr)
+                    logger.info("✅ 成功加载任务模块：%s", task_abbr)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("❌ 加载任务模块失败 %s: %s", task_abbr, exc)
+                    raise exc
+                # 使用任务模块进行评测
+                records = await evaluate_dataset(task_abbr, task_module, args, ports, logger)
+                all_records[task_abbr] = records
+                logger.info("✅ 完成评测数据集：%s", task_abbr)
         
         asyncio.run(run_evaluations())
 
