@@ -291,12 +291,21 @@ def merge_model_if_needed(
         logger.info("检测到已存在的合并模型目录，直接复用：%s", output_dir)
         return output_dir
 
+    adapter_path = Path(args.adapter).resolve()
+    if not adapter_path.exists():
+        raise ValueError(f"Adapter路径不存在: {adapter_path}")
+
+    # 检查关键文件是否存在，防止 peft 误将其识别为 huggingface repo id
+    adapter_config_path = adapter_path / "adapter_config.json"
+    if not adapter_config_path.exists():
+        raise ValueError(f"adapter_config.json 未在 {adapter_path} 中找到")
+
     torch_dtype = resolve_torch_dtype(args.dtype)
     logger.info("加载基础模型：%s", args.model)
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
         torch_dtype=torch_dtype,
-        device_map="cpu",
+        device_map="cuda",
         trust_remote_code=args.trust_remote_code,
     )
     logger.info("加载分词器：%s", args.model)
@@ -304,15 +313,24 @@ def merge_model_if_needed(
         args.model,
         trust_remote_code=args.trust_remote_code,
     )
-    logger.info("加载LoRA/PEFT adapter：%s", args.adapter)
-    model = PeftModel.from_pretrained(model, args.adapter)
+    logger.info("加载LoRA/PEFT adapter：%s", adapter_path)
+    # 显式转换为 str
+    model = PeftModel.from_pretrained(model, str(adapter_path), device_map="cuda")
     logger.info("执行merge_and_unload，将LoRA权重写入基础模型。")
     model = model.merge_and_unload()
 
     logger.info("保存合并模型至：%s", output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(output_dir)
+    model.save_pretrained(output_dir, safe_serialization=True)
     tokenizer.save_pretrained(output_dir)
+
+    # 主动释放内存
+    del model
+    import gc
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
     return output_dir
 
 
