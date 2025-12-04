@@ -66,7 +66,7 @@ def score_response(dataset_name: str, response: str, sample: Dict[str, Any]) -> 
         ground_truth = sample["label"]
     else:
         raise ValueError(f"不支持的样本: {sample}")
-    return 1.0 if grade_answer_verl(response, ground_truth) else 0.0
+    return 1.0 if grade_answer_verl(response, str(ground_truth)) else 0.0
 
 
 class StreamToLogger:
@@ -192,6 +192,7 @@ def parse_args() -> Tuple[argparse.Namespace, List[str], List[str]]:
         default=0.95,
         help="传给vLLM的GPU显存利用率上限（0~1），用于控制单卡显存占用比例。",
     )
+    parser.add_argument("--seed", type=float, default=None, help="生成随机种子。")
     parser.add_argument("--temperature", type=float, default=1.0, help="生成温度。")
     parser.add_argument("--top-p", type=float, default=1.0, help="生成top-p。")
     parser.add_argument("--max-new-tokens", type=int, default=131072, help="生成长度。")
@@ -204,7 +205,7 @@ def parse_args() -> Tuple[argparse.Namespace, List[str], List[str]]:
     )
     parser.add_argument("--api-key", default="dummy", help="OpenAI兼容接口的API Key。")
     parser.add_argument(
-        "--request-timeout", type=float, default=600.0, help="请求单次超时时间。"
+        "--request-timeout", type=float, default=3600.0, help="请求单次超时时间。"
     )
     parser.add_argument(
         "--max-samples", type=int, default=None, help="调试用，限制评测样本数量。"
@@ -453,38 +454,6 @@ def wait_for_vllm_ready(
     return False
 
 
-def generate_with_vllm(prompt: str, port: int, args: argparse.Namespace) -> str:
-    """同步版本的vLLM生成函数（保留用于向后兼容）。"""
-    url = f"http://127.0.0.1:{port}/v1/chat/completions"
-    payload = {
-        "model": args.served_model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": args.temperature,
-        "top_p": args.top_p,
-        "max_tokens": args.max_new_tokens,
-        "n": 1,
-    }
-    data = json.dumps(payload).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {args.api_key}",
-    }
-    request = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=args.request_timeout) as response:
-            body = response.read().decode("utf-8")
-            content = json.loads(body)
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"vLLM返回HTTP错误: {exc}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"vLLM连接失败: {exc}") from exc
-
-    try:
-        return content["choices"][0]["message"]["content"]
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"解析vLLM响应失败: {content}") from exc
-
-
 async def generate_with_vllm_async(
     session: aiohttp.ClientSession, prompt: str, port: int, args: argparse.Namespace
 ) -> str:
@@ -498,6 +467,8 @@ async def generate_with_vllm_async(
         "max_tokens": args.max_new_tokens,
         "n": 1,
     }
+    if args.seed is not None:
+        payload["seed"] = args.seed
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {args.api_key}",
@@ -595,6 +566,7 @@ async def generate_responses(
                             "problem_id" in data
                             and "rollout_id" in data
                             and "response" in data
+                            and data["response"] != ""
                         ):
                             generated_results.append(data)
                             cache.add((data["problem_id"], data["rollout_id"]))
@@ -664,7 +636,7 @@ async def generate_responses(
                         port,
                         exc,
                     )
-                    response = ""
+                    return
 
             record = {
                 "problem_id": problem_id,
@@ -680,7 +652,8 @@ async def generate_responses(
 
             await visualizer.update(problem_id, rollout_id)
 
-        async with aiohttp.ClientSession() as session:
+        connector = aiohttp.TCPConnector(limit=0, limit_per_host=0)
+        async with aiohttp.ClientSession(connector=connector) as session:
             tasks = [
                 generate_one_task(pid, rid, pmt, pidx, session)
                 for pid, rid, pmt, pidx in tasks_to_process
@@ -745,6 +718,10 @@ def evaluate_dataset_results(
                 scores = []
 
                 for rid in range(rollout_n):
+                    if rid not in rollout_dict:
+                        raise ValueError(
+                            f"结果缺失: problem_id={problem_id} rollout_id={rid}。请检查生成过程是否有失败请求。"
+                        )
                     resp = rollout_dict.get(rid, "")
                     responses.append(resp)
 
