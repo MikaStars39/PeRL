@@ -17,7 +17,13 @@ PROJECT_DIR="/root/project/perl"
 MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/Qwen3-4B-Thinking-2507"
 ADAPTER_PATH=""
 RESULT_DIR="${PROJECT_DIR}/results/qwen3-4b-thinking-2507"
-DATASET="aime2024,aime2025"
+# DATASET="aime2024,aime2025"
+DATASET="hmmt2025"
+
+# Follow JustRL --- link: https://github.com/thunlp/JustRL/blob/main/evals/gen_vllm.py#L28-L30
+TEMPERATURE="0.7"
+TOP_P="0.9"
+MAX_NEW_TOKENS="31744"
 
 /root/miniconda3/envs/perl/bin/python "${PROJECT_DIR}/scripts/eval/eval.py" \
   --result-dir "${RESULT_DIR}" \
@@ -29,8 +35,8 @@ DATASET="aime2024,aime2025"
   --dp-size 8 \
   --tp-size 1 \
   --gpu-memory-utilization 0.95 \
-  --temperature 1.0 \
-  --top-p 1.0 \
-  --max-new-tokens 131072 \
-  --max-num-request-per-dp 16 \
+  --temperature "${TEMPERATURE}" \
+  --top-p "${TOP_P}" \
+  --max-new-tokens "${MAX_NEW_TOKENS}" \
+  --max-num-request-per-dp 64 \
   --dtype "bfloat16" 2>&1 | tee "eval.log"

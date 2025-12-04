@@ -34,6 +34,51 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
 
+PROMPT_TEMPLATE = """{problem} Please reason step by step, and put your final answer within \\boxed{{}}."""
+DATASETS = {
+    'aime2024': ('HuggingFaceH4/aime_2024', 'train'),
+    'aime2025': ('yentinglin/aime_2025', 'train'),
+    'hmmt2025': ('FlagEval/HMMT_2025', 'train'),
+}
+
+
+def load_dataset_from_hf(dataset_name: str):
+    if dataset_name in DATASETS:
+        hf_name, split = DATASETS[dataset_name]
+        return load_dataset(hf_name, split=split)
+    else:
+        raise ValueError(f"不支持的数据集: {dataset_name}")
+
+
+def prepare_prompt(dataset_name: str, sample: Dict[str, Any]) -> str:
+    """根据sample构建模型输入prompt，可按需修改增强。"""
+    problem = None
+    if 'problem' in sample:
+        problem = sample['problem']
+    if 'question' in sample:
+        problem = sample['question']
+    elif 'prompt' in sample:
+        problem = sample['prompt']
+    else:
+        raise ValueError(f"不支持的样本: {sample}")
+    return PROMPT_TEMPLATE.format(problem=problem)
+
+
+os.environ['PYTHONPATH'] = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + ":" + os.environ.get('PYTHONPATH', '')
+from utils import grade_answer_verl
+
+
+def score_response(dataset_name: str, prompt: str, response: str, sample: Dict[str, Any]) -> float:
+    ground_truth = None
+    if 'answer' in sample:
+        ground_truth = sample['answer']
+    elif 'label' in sample:
+        ground_truth = sample['label']
+    else:
+        raise ValueError(f"不支持的样本: {sample}")
+    return 1.0 if grade_answer_verl(response, ground_truth) else 0.0
+
+
 class StreamToLogger:
     """Redirect stdout/stderr到logger，确保输出被文件与控制台同时记录。"""
 
@@ -88,28 +133,28 @@ class StageContext:
     def __init__(
         self,
         logger: logging.Logger,
-        stage_id: int,
+        stage_id: int | str,
         name: str,
         emoji_start: str = "🚀",
         emoji_end: str = "🏁",
         emoji_fail: str = "💥",
     ) -> None:
         self.logger = logger
-        self.stage_id = stage_id
+        self.stage_id = str(stage_id)
         self.name = name
         self.emoji_start = emoji_start
         self.emoji_end = emoji_end
         self.emoji_fail = emoji_fail
 
     def __enter__(self) -> "StageContext":
-        self.logger.info("%s 第%d阶段开始：%s", self.emoji_start, self.stage_id, self.name)
+        self.logger.info("%s 第%s阶段开始：%s", self.emoji_start, self.stage_id, self.name)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
         if exc_type is None:
-            self.logger.info("%s 第%d阶段结束：%s", self.emoji_end, self.stage_id, self.name)
+            self.logger.info("%s 第%s阶段结束：%s", self.emoji_end, self.stage_id, self.name)
         else:
-            self.logger.error("%s 第%d阶段失败：%s，错误：%s", self.emoji_fail, self.stage_id, self.name, exc)
+            self.logger.error("%s 第%s阶段失败：%s，错误：%s", self.emoji_fail, self.stage_id, self.name, exc)
 
 
 def parse_args() -> Tuple[argparse.Namespace, List[str], List[str]]:
@@ -196,32 +241,6 @@ def resolve_torch_dtype(dtype: Any) -> Any:
     raise ValueError(f"不支持的dtype: {dtype}")
 
 
-def prepare_prompt(sample: Dict[str, Any]) -> str:
-    """根据sample构建模型输入prompt，可按需修改增强。"""
-    if isinstance(sample, dict):
-        if "prompt" in sample:
-            return str(sample["prompt"])
-        if "instruction" in sample and "input" in sample:
-            return f"{sample['instruction']}\n{sample['input']}"
-        if "instruction" in sample:
-            return str(sample["instruction"])
-        if "question" in sample:
-            return str(sample["question"])
-        if "text" in sample:
-            return str(sample["text"])
-    return str(sample)
-
-
-def score_response(prompt: str, response: str, sample: Dict[str, Any]) -> float:
-    """简单占位评分：若sample包含answer/label且出现在response则记1，否则0。"""
-    answer = None
-    if isinstance(sample, dict):
-        answer = sample.get("answer") or sample.get("label")
-    if answer is None:
-        return 0.0
-    return float(str(answer) in response)
-
-
 def merge_model_if_needed(args: argparse.Namespace, result_dir: Path, logger: logging.Logger) -> Path:
     if not args.adapter:
         logger.info("未提供adapter，直接使用基础模型：%s", args.model)
@@ -300,13 +319,13 @@ def start_vllm_processes(
         start_gpu_id = rank * args.tp_size
         end_gpu_id = start_gpu_id + args.tp_size
         gpu_ids = list(range(start_gpu_id, end_gpu_id))
-        
+
         # 校验是否越界（基于args.num_gpus或者简单的逻辑校验，这里假设用户配置正确）
         # 如果需要更严格校验，可以在此处添加。
-        
+
         env_local = env.copy()
         env_local["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_ids))
-        
+
         port = args.serve_port + rank
         cmd = build_vllm_command(model_path, port, args, vllm_args)
         logger.info("启动vLLM后端[%d/%d]，端口%d，GPUs=%s，命令：%s", rank + 1, dp_size, port, gpu_ids, " ".join(cmd))
@@ -380,58 +399,6 @@ def load_dataset_by_name(name: str, split: str):
     return load_dataset(name, split=split)
 
 
-def load_task_module(task_abbr: str) -> Any:
-    """
-    根据任务缩写动态加载对应的任务模块。
-    实现方案：根据缩写（如aime2024）动态加载tasks/{aime2024}.py脚本中的函数。
-    简化实现：将项目根目录添加到sys.path，使相对导入能够正常工作。
-    
-    Args:
-        task_abbr: 任务缩写，如 "aime2024"
-    
-    Returns:
-        加载的任务模块对象
-    
-    Raises:
-        FileNotFoundError: 如果任务文件不存在
-        ImportError: 如果模块加载失败
-    """
-    # 获取当前脚本所在目录和项目根目录
-    current_dir = Path(__file__).parent  # scripts/eval
-    project_root = current_dir.parent.parent  # 项目根目录（包含scripts的目录）
-    task_file = current_dir / "tasks" / f"{task_abbr}.py"
-    
-    if not task_file.exists():
-        raise FileNotFoundError(f"任务文件不存在: {task_file}")
-    
-    # 将项目根目录添加到sys.path（如果还没有的话），这样相对导入就能正常工作
-    project_root_str = str(project_root)
-    if project_root_str not in sys.path:
-        sys.path.insert(0, project_root_str)
-    
-    # 使用importlib动态加载模块
-    module_name = f"scripts.eval.tasks.{task_abbr}"
-    spec = importlib.util.spec_from_file_location(module_name, task_file)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"无法加载任务模块: {task_file}")
-    
-    module = importlib.util.module_from_spec(spec)
-    # 设置__package__属性，使相对导入能够正常工作
-    module.__package__ = "scripts.eval.tasks"
-    module.__name__ = module_name
-    
-    # 执行模块代码
-    spec.loader.exec_module(module)
-    
-    # 验证必需的函数是否存在
-    required_functions = ["load_dataset", "prepare_prompt", "score_response"]
-    for func_name in required_functions:
-        if not hasattr(module, func_name):
-            raise ImportError(f"任务模块 {task_abbr} 缺少必需的函数: {func_name}")
-    
-    return module
-
-
 def generate_with_vllm(prompt: str, port: int, args: argparse.Namespace) -> str:
     """同步版本的vLLM生成函数（保留用于向后兼容）。"""
     url = f"http://127.0.0.1:{port}/v1/chat/completions"
@@ -503,7 +470,6 @@ def save_text(path: Path, text: str) -> None:
 
 async def evaluate_dataset(
     dataset_name: str,
-    task_module: Any,
     args: argparse.Namespace,
     ports: List[int],
     logger: logging.Logger,
@@ -517,16 +483,8 @@ async def evaluate_dataset(
     outputs_dir = dataset_dir / "outputs"
     result_file = dataset_dir / "result.jsonl"
 
-    if result_file.exists():
-        logger.warning("检测到已存在的结果文件，跳过重新评测数据集 %s : %s", dataset_name, result_file)
-        try:
-            with result_file.open("r", encoding="utf-8") as f:
-                return [json.loads(line) for line in f if line.strip()]
-        except Exception as exc:  # noqa: BLE001
-            logger.error("读取已有结果失败，将重新评测。错误：%s", exc)
-
     # 使用任务模块中的load_dataset函数加载数据集
-    ds = task_module.load_dataset_from_hf()
+    ds = load_dataset_from_hf(dataset_name)
 
     # 为每个DP端口创建信号量，限制并发请求数
     max_concurrent_per_dp = max(1, args.max_num_request_per_dp)
@@ -541,7 +499,7 @@ async def evaluate_dataset(
 
     for idx, sample in enumerate(ds):
         # 使用任务模块中的prepare_prompt函数
-        prompt = task_module.prepare_prompt(sample)
+        prompt = prepare_prompt(dataset_name, sample)
         problem_dir = outputs_dir / f"{idx:06d}"
         for rollout_id in range(args.rollout_n):
             output_path = problem_dir / f"rollout_{rollout_id:03d}.txt"
@@ -594,13 +552,13 @@ async def evaluate_dataset(
                         "score": 0.0,
                         "details": {},
                     }
-        
+
         # 响应已保存或来自缓存，现在尝试评分
         score = 0.0
         details = {}
         try:
             # 使用任务模块中的score_response函数
-            score_result = task_module.score_response(prompt, response, sample)
+            score_result = score_response(dataset_name, prompt, response, sample)
             # 兼容返回元组或单个值的情况
             if isinstance(score_result, tuple):
                 score, details = score_result
@@ -609,7 +567,7 @@ async def evaluate_dataset(
                 details = {}
         except Exception as exc:  # noqa: BLE001
             logger.warning("评分失败 problem=%06d rollout=%03d，响应已保存，使用默认分数。错误：%s", problem_id, rollout_id, exc)
-        
+
         return {
             "problem_id": problem_id,
             "rollout_id": rollout_id,
@@ -677,7 +635,7 @@ def main() -> None:
     if leftover:
         logger.warning("检测到无法识别的参数（将被忽略）：%s", leftover)
 
-    with StageContext(logger, 1, "准备模型/合并LoRA"):
+    with StageContext(logger, 'A', "准备模型/合并LoRA"):
         model_path = merge_model_if_needed(args, Path(args.result_dir), logger)
 
     with StageContext(logger, 2, "启动vLLM后端"):
@@ -703,18 +661,11 @@ def main() -> None:
         async def run_evaluations():
             for task_abbr in datasets_to_run:
                 logger.info("🧪 开始评测数据集：%s", task_abbr)
-                try:
-                    # 动态加载任务模块
-                    task_module = load_task_module(task_abbr)
-                    logger.info("✅ 成功加载任务模块：%s", task_abbr)
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("❌ 加载任务模块失败 %s: %s", task_abbr, exc)
-                    raise exc
                 # 使用任务模块进行评测
-                records = await evaluate_dataset(task_abbr, task_module, args, ports, logger)
+                records = await evaluate_dataset(task_abbr, args, ports, logger)
                 all_records[task_abbr] = records
                 logger.info("✅ 完成评测数据集：%s", task_abbr)
-        
+
         asyncio.run(run_evaluations())
 
     with StageContext(logger, 4, "统计阶段：计算avg@k与pass@k"):
