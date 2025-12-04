@@ -14,10 +14,7 @@ export LD_LIBRARY_PATH="/root/miniconda3/envs/perl/lib:/usr/local/nvidia/lib64:$
 # export VLLM_LOGGING_LEVEL="DEBUG"
 
 PROJECT_DIR="/root/project/perl"
-MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/Qwen3-4B-Thinking-2507"
-ADAPTER_PATH=""
-RESULT_DIR="${PROJECT_DIR}/results/qwen3-4b-thinking-2507"
-DATASET="aime2024@32"
+DATASET="aime2025@32"
 # DATASET="aime2024@32,aime2025@32"
 # DATASET="hmmt2025@4"
 
@@ -26,17 +23,29 @@ TEMPERATURE="0.7"
 TOP_P="0.9"
 MAX_NEW_TOKENS="31744"
 
-/root/miniconda3/envs/perl/bin/python "${PROJECT_DIR}/scripts/eval/eval.py" \
-  --result-dir "${RESULT_DIR}" \
-  --model "${MODEL_PATH}" \
-  --adapter "${ADAPTER_PATH}" \
-  --dataset "${DATASET}" \
-  --serve-port 8000 \
-  --dp-size 8 \
-  --tp-size 1 \
-  --gpu-memory-utilization 0.95 \
-  --temperature "${TEMPERATURE}" \
-  --top-p "${TOP_P}" \
-  --max-new-tokens "${MAX_NEW_TOKENS}" \
-  --max-num-request-per-dp 64 \
-  --dtype "bfloat16" 2>&1 | tee "eval.log"
+function eval_model_with_adapter() {
+  /root/miniconda3/envs/perl/bin/python "${PROJECT_DIR}/scripts/eval/eval.py" \
+    --result-dir "$1" \
+    --model "$2" \
+    --adapter "$3" \
+    --dataset "${DATASET}" \
+    --serve-port 8000 \
+    --dp-size 8 \
+    --tp-size 1 \
+    --gpu-memory-utilization 0.95 \
+    --temperature "${TEMPERATURE}" \
+    --top-p "${TOP_P}" \
+    --max-new-tokens "${MAX_NEW_TOKENS}" \
+    --max-num-request 512 \
+    --dtype "bfloat16" 2>&1 | tee "eval.log";
+}
+
+eval_model_with_adapter \
+  "${PROJECT_DIR}/results/qwen3-4b-thinking-2507" \
+  "/mnt/shared-storage-user/p1-shared/Qwen/Qwen3-4B-Thinking-2507" \
+  "" \
+
+# eval_model_with_adapter \
+#   "${PROJECT_DIR}/results/deepseek-r1-1.5b" \
+#   "/mnt/shared-storage-user/p1-shared/Qwen/DeepSeek-R1-Distill-Qwen-1.5B" \
+#   "" \

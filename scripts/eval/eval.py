@@ -221,13 +221,22 @@ def parse_args() -> Tuple[argparse.Namespace, List[str], List[str]]:
         "--max-samples", type=int, default=None, help="调试用，限制评测样本数量。"
     )
     parser.add_argument(
-        "--max-num-request-per-dp",
+        "--max-num-request",
         type=int,
-        default=1,
+        default=None,
         help="每个数据并行（DP）的vLLM后端同时运行的请求数上限。",
     )
 
     args, unknown = parser.parse_known_args()
+
+    if args.max_num_request is None:
+        args.max_num_request = args.dp_size
+    else:
+        assert args.max_num_request > 0
+        assert args.max_num_request % args.dp_size == 0, (
+            f"args.max_num_request({args.max_num_request}) must be divisible by args.dp_size({args.dp_size})"
+        )
+
     vllm_args, leftover = extract_vllm_args(unknown)
     return args, vllm_args, leftover
 
@@ -515,6 +524,50 @@ async def generate_with_vllm_async(
         raise RuntimeError(f"解析vLLM响应失败: {content}") from exc
 
 
+class ProgressVisualizer:
+    def __init__(
+        self,
+        filepath: Path,
+        problem_n: int,
+        rollout_n: int,
+        completed: Set[Tuple[int, int]],
+    ) -> None:
+        self.filepath = filepath
+        self.problem_n = problem_n
+        self.rollout_n = rollout_n
+        # 行: rollout_id, 列: problem_id
+        self.grid = [["." for _ in range(problem_n)] for _ in range(rollout_n)]
+        for pid, rid in completed:
+            if 0 <= rid < rollout_n and 0 <= pid < problem_n:
+                self.grid[rid][pid] = "X"
+        self.lock = asyncio.Lock()
+        self._write_sync()
+
+    def _write_sync(self) -> None:
+        try:
+            with self.filepath.open("w", encoding="utf-8") as f:
+                for row in self.grid:
+                    f.write("".join(row) + "\n")
+        except Exception:
+            pass
+
+    async def update(self, problem_id: int, rollout_id: int) -> None:
+        if 0 <= rollout_id < self.rollout_n and 0 <= problem_id < self.problem_n:
+            async with self.lock:
+                if self.grid[rollout_id][problem_id] != "X":
+                    self.grid[rollout_id][problem_id] = "X"
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self._write_sync
+                    )
+
+    def cleanup(self) -> None:
+        try:
+            if self.filepath.exists():
+                self.filepath.unlink()
+        except Exception:
+            pass
+
+
 async def generate_responses(
     args: argparse.Namespace,
     dataset_name: str,
@@ -557,7 +610,7 @@ async def generate_responses(
 
     with StageContext(logger, "C.2", "准备生成任务"):
         ds = load_dataset_from_hf(dataset_name)
-        max_concurrent_per_dp = max(1, args.max_num_request_per_dp)
+        max_concurrent_per_dp = max(1, args.max_num_request // args.dp_size)
         semaphores = {port: asyncio.Semaphore(max_concurrent_per_dp) for port in ports}
 
         tasks_to_process: List[Tuple[int, int, str, int]] = []
@@ -573,8 +626,13 @@ async def generate_responses(
 
         logger.info("需要新生成的请求数：%d", len(tasks_to_process))
 
+        visualizer = ProgressVisualizer(
+            dataset_dir / "process.txt", len(ds), rollout_n, cache
+        )
+
         if not tasks_to_process:
             logger.info("所有请求已在缓存中，无需生成。")
+            visualizer.cleanup()
             return
 
     with StageContext(logger, "C.3", "并行生成"):
@@ -624,12 +682,15 @@ async def generate_responses(
                 with output_file.open("a", encoding="utf-8") as f:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+            await visualizer.update(problem_id, rollout_id)
+
         async with aiohttp.ClientSession() as session:
             tasks = [
                 generate_one_task(pid, rid, pmt, pidx, session)
                 for pid, rid, pmt, pidx in tasks_to_process
             ]
             await asyncio.gather(*tasks)
+            visualizer.cleanup()
 
         logger.info("数据集 %s 生成完成，结果存入 %s", dataset_name, output_file)
 
@@ -762,6 +823,10 @@ def evaluate_dataset_results(
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "summary": summary,
             "raw": raw_stats_list,
+            "response_example": [
+                outputs_map[0][0],
+                outputs_map[-1][-1],
+            ],
         }
 
         with result_json_file.open("w", encoding="utf-8") as f:
