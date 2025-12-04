@@ -646,6 +646,7 @@ def evaluate_dataset_results(
     dataset_dir = Path(args.result_dir) / dataset_name
     output_file = dataset_dir / "output.jsonl"
     result_file = dataset_dir / "result.jsonl"
+    result_json_file = dataset_dir / "result.json"
 
     with StageContext(logger, "D.1", "加载模型输出"):
         if not output_file.exists():
@@ -671,6 +672,7 @@ def evaluate_dataset_results(
 
     with StageContext(logger, "D.3", "并行评测&计算指标"):
         records_for_metrics: List[Dict[str, Any]] = []
+        raw_stats_list: List[Dict[str, Any]] = []
 
         with result_file.open("w", encoding="utf-8") as rf:
             for idx, sample in enumerate(ds):
@@ -732,44 +734,40 @@ def evaluate_dataset_results(
                 }
                 rf.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-        logger.info("评测完成，结果写入 %s", result_file)
+                raw_stats_list.append(
+                    {
+                        "problem_id": problem_id,
+                        "avg": avg_val,
+                        "max": max_val,
+                        "min": min_val,
+                        "mean": mean_val,
+                        "std": std_val,
+                    }
+                )
 
-    return compute_metrics(records_for_metrics, rollout_n)
+        if raw_stats_list:
+            summary = {
+                "avg": statistics.mean(x["avg"] for x in raw_stats_list),
+                "max": statistics.mean(x["max"] for x in raw_stats_list),
+                "min": statistics.mean(x["min"] for x in raw_stats_list),
+                "mean": statistics.mean(x["mean"] for x in raw_stats_list),
+                "std": statistics.mean(x["std"] for x in raw_stats_list),
+            }
+        else:
+            summary = {"avg": 0.0, "max": 0.0, "min": 0.0, "mean": 0.0, "std": 0.0}
 
+        final_json = {
+            "dataset_name": dataset_name,
+            "rollout_n": rollout_n,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "summary": summary,
+            "raw": raw_stats_list,
+        }
 
-def compute_pass_at_k(num_samples: int, num_correct: int, k: int) -> float:
-    if num_correct == 0:
-        return 0.0
-    if num_samples <= k:
-        return 1.0 if num_correct > 0 else 0.0
-    return 1 - (math.comb(num_samples - num_correct, k) / math.comb(num_samples, k))
+        with result_json_file.open("w", encoding="utf-8") as f:
+            json.dump(final_json, f, indent=2, ensure_ascii=False)
 
-
-def compute_metrics(
-    records: List[Dict[str, Any]], rollout_n: int
-) -> Dict[str, Dict[int, float]]:
-    by_problem: Dict[int, List[float]] = {}
-    for rec in records:
-        by_problem.setdefault(int(rec["problem_id"]), []).append(float(rec["score"]))
-
-    avg_at_k: Dict[int, float] = {}
-    pass_at_k: Dict[int, float] = {}
-
-    for k in range(1, rollout_n + 1):
-        avg_scores = []
-        pass_scores = []
-        for scores in by_problem.values():
-            sorted_scores = sorted(scores, reverse=True)
-            topk = sorted_scores[:k]
-            if topk:
-                avg_scores.append(sum(topk) / len(topk))
-            c = sum(1 for s in scores if s > 0)
-            pass_scores.append(compute_pass_at_k(len(scores), c, k))
-
-        avg_at_k[k] = sum(avg_scores) / len(avg_scores) if avg_scores else 0.0
-        pass_at_k[k] = sum(pass_scores) / len(pass_scores) if pass_scores else 0.0
-
-    return {"avg_at_k": avg_at_k, "pass_at_k": pass_at_k}
+        logger.info("评测完成，结果写入 %s 和 %s", result_file, result_json_file)
 
 
 async def main() -> None:
@@ -817,13 +815,8 @@ async def main() -> None:
             if "@" in task_abbr:
                 rollout_n = int(task_abbr.split("@")[1])
                 task_abbr = task_abbr.split("@")[0]
-            metrics = evaluate_dataset_results(args, task_abbr, rollout_n, logger)
-            logger.info(
-                "📊 数据集%s avg@%d: %s", task_abbr, rollout_n, metrics["avg_at_k"]
-            )
-            logger.info(
-                "📈 数据集%s pass@%d: %s", task_abbr, rollout_n, metrics["pass_at_k"]
-            )
+            evaluate_dataset_results(args, task_abbr, rollout_n, logger)
+            logger.info("📊 数据集%s (rollout=%d) 评测完成", task_abbr, rollout_n)
 
     stop_vllm_processes(processes, logger)
     logger.info("全部评测流程完成。")

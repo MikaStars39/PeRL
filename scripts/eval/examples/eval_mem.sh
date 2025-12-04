@@ -17,8 +17,9 @@ PROJECT_DIR="/root/project/perl"
 MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/Qwen3-4B-Thinking-2507"
 ADAPTER_PATH=""
 RESULT_DIR="${PROJECT_DIR}/results/qwen3-4b-thinking-2507"
-# DATASET="aime2024,aime2025"
-DATASET="hmmt2025"
+DATASET="aime2024@32"
+# DATASET="aime2024@32,aime2025@32"
+# DATASET="hmmt2025@4"
 
 # Follow JustRL --- link: https://github.com/thunlp/JustRL/blob/main/evals/gen_vllm.py#L28-L30
 TEMPERATURE="0.7"
@@ -30,7 +31,6 @@ MAX_NEW_TOKENS="31744"
   --model "${MODEL_PATH}" \
   --adapter "${ADAPTER_PATH}" \
   --dataset "${DATASET}" \
-  --rollout-n 4 \
   --serve-port 8000 \
   --dp-size 8 \
   --tp-size 1 \
