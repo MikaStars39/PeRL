@@ -135,14 +135,16 @@ class InferenceProcessor:
         try:
             response = self.client.chat.completions.create(
                 model=self.args.model_name,
-                messages=[{
-                    "role":
-                    "system",
-                    "content":
-                    "Your task is to follow a systematic, thorough reasoning process before providing the final solution. This involves analyzing, summarizing, exploring, reassessing, and refining your thought process through multiple iterations. Structure your response into two sections: Thought and Solution. In the Thought section, present your reasoning using the format: \"<think>\n {thoughts} </think>\n\". Each thought should include detailed analysis, brainstorming, verification, and refinement of ideas. After \"</think>\n,\" in the Solution section, provide the final, logical, and accurate answer, clearly derived from the exploration in the Thought section. If applicable, include the answer in \\boxed{} for closed-form results like multiple choices or mathematical solutions.",
-                }, {
+                messages=[
+                    # {
+                    # "role":
+                    # "system",
+                    # "content":
+                    # "Your task is to follow a systematic, thorough reasoning process before providing the final solution. This involves analyzing, summarizing, exploring, reassessing, and refining your thought process through multiple iterations. Structure your response into two sections: Thought and Solution. In the Thought section, present your reasoning using the format: \"<think>\n {thoughts} </think>\n\". Each thought should include detailed analysis, brainstorming, verification, and refinement of ideas. After \"</think>\n,\" in the Solution section, provide the final, logical, and accurate answer, clearly derived from the exploration in the Thought section. If applicable, include the answer in \\boxed{} for closed-form results like multiple choices or mathematical solutions.",
+                    # }, 
+                    {
                     "role": "user",
-                    "content": prompt
+                    "content": prompt + "Please reason step by step, and put your final answer within \\boxed{{}}."
                 }],
                 max_tokens=self.args.max_tokens,
                 temperature=self.args.temperature,
@@ -157,14 +159,25 @@ class InferenceProcessor:
     def _fetch_responses_for_item(self, item: Dict[str,
                                                    Any]) -> Dict[str, Any]:
         prompt_raw = item.get('prompt')
-        # 支持 prompt 为消息列表或纯字符串
+        # 支持 prompt 为消息列表或纯字符串（包括 numpy array）
+        if hasattr(prompt_raw, 'tolist'):
+            prompt_raw = prompt_raw.tolist()
+
         prompt_text = ""
-        if isinstance(prompt_raw, list):
-            # 取最后一条有 content 的消息，通常是用户问题
-            for msg in reversed(prompt_raw):
-                if isinstance(msg, dict) and 'content' in msg:
-                    prompt_text = msg['content']
-                    break
+        if isinstance(prompt_raw, (list, tuple)):
+            # 优先取列表中第二个且 role 为 user 的 content
+            if (len(prompt_raw) > 1 and isinstance(prompt_raw[1], dict)
+                    and prompt_raw[1].get('role') == 'user'
+                    and 'content' in prompt_raw[1]):
+                prompt_text = prompt_raw[1]['content']
+            else:
+                # 退化为查找首个 user 消息
+                for msg in prompt_raw:
+                    if (isinstance(msg, dict)
+                            and msg.get('role') == 'user'
+                            and 'content' in msg):
+                        prompt_text = msg['content']
+                        break
         elif isinstance(prompt_raw, dict) and 'content' in prompt_raw:
             prompt_text = prompt_raw['content']
         elif isinstance(prompt_raw, str):
