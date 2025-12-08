@@ -1,5 +1,6 @@
 ckpts/
 results/
+outputs/
 
 # Byte-compiled / optimized / DLL files
 .DS_Store
