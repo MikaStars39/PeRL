@@ -206,7 +206,7 @@ def api_results():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Moniter for evaluation results")
+    parser = argparse.ArgumentParser(description="Monitor for evaluation results")
     parser.add_argument(
         "--result-dir",
         type=str,
