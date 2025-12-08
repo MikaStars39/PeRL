@@ -7,7 +7,7 @@ export LD_LIBRARY_PATH="/root/miniconda3/envs/perl/lib:/usr/local/nvidia/lib64:$
 
 PROJECT_DIR="/root/project/perl"
 BASE_MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/DeepSeek-R1-Distill-Qwen-1.5B"
-DATASET="aime2024@32,aime2025@32,amc2023@32,math500@4,minerva@4,hmmt2025@32"
+DATASET="aime2024@512,aime2025@512,amc2023@32,math500@4,minerva@4,hmmt2025@32"
 # DATASET="hmmt2025@4"
 
 # Follow JustRL --- link: https://github.com/thunlp/JustRL/blob/main/evals/gen_vllm.py#L28-L30
@@ -38,24 +38,24 @@ function eval_model_with_adapter() {
     --temperature "${TEMPERATURE}" \
     --top-p "${TOP_P}" \
     --max-new-tokens "${MAX_NEW_TOKENS}" \
-    --max-num-request 256 \
+    --max-num-request 512 \
     --dtype "bfloat16" 2>&1 | tee "eval2.log";
 }
 
-# eval_model_with_adapter \
-#   "${PROJECT_DIR}/results/qwen3-4b-thinking-2507" \
-#   "${BASE_MODEL_PATH}" \
-#   ""
+eval_model_with_adapter \
+  "${PROJECT_DIR}/results/deepseek-r1-1.5b" \
+  "${BASE_MODEL_PATH}" \
+  ""
 
 eval_model_with_adapter \
    "${PROJECT_DIR}/results/test-perl-20251208" \
    "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/ckpts/perl";
+   "${PROJECT_DIR}/ckpts/perl"
 
-# eval_model_with_adapter \
-#   "${PROJECT_DIR}/results/test-full-20251208" \
-#   "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
-#   ""
+eval_model_with_adapter \
+  "${PROJECT_DIR}/results/test-full-20251208" \
+  "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
+  ""
 
 function download_and_eval_model_with_adapter() {
   mkdir -p "${PROJECT_DIR}/ckpts/$1/$2";

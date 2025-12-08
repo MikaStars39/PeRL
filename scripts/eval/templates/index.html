@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evaluation Viewer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        .experiment-card { margin-bottom: 20px; }
+        .stats-box { background: #f8f9fa; padding: 10px; border-radius: 5px; }
+        .status-running { color: #ffc107; font-weight: bold; }
+        .status-finished { color: #198754; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="app" class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>Evaluation Results</h1>
+            <div>
+                <span v-if="loading" class="text-muted">Updating...</span>
+                <span class="text-muted ms-2">Last update: [[ lastUpdate ]]</span>
+            </div>
+        </div>
+
+        <div v-if="error" class="alert alert-danger">[[ error ]]</div>
+
+        <div v-for="exp in sortedExperiments" :key="exp.exp_name" class="card experiment-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">[[ exp.exp_name ]]</h5>
+                <div>
+                    <span class="text-muted small me-3">Updated: [[ formatDate(exp.last_update) ]]</span>
+                    <span :class="{'status-running': exp.status === 'running', 'status-finished': exp.status === 'finished'}">
+                        [[ exp.status ]] ([[ (exp.process * 100).toFixed(1) ]]%)
+                    </span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-2"><strong>Size:</strong> [[ exp.size ]]</div>
+                    <div class="col-md-2"><strong>Avg:</strong> [[ exp.avg.toFixed(2) ]]</div>
+                    <div class="col-md-2"><strong>Max:</strong> [[ exp.max.toFixed(2) ]]</div>
+                    <div class="col-md-2"><strong>Min:</strong> [[ exp.min.toFixed(2) ]]</div>
+                    <div class="col-md-2"><strong>Std:</strong> [[ exp.std.toFixed(2) ]]</div>
+                    <div class="col-md-2"><strong>Dir:</strong> <small>[[ exp.result_dir ]]</small></div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Task</th>
+                                <th>Rollout N</th>
+                                <th>Status</th>
+                                <th>Size</th>
+                                <th>Avg</th>
+                                <th>Max</th>
+                                <th>Min</th>
+                                <th>Std</th>
+                                <th>Process</th>
+                                <th>Last Update</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="task in exp.results" :key="task.task_name">
+                                <td>[[ task.task_name ]]</td>
+                                <td>[[ task.rollout_n ]]</td>
+                                <td>
+                                    <span :class="{'text-warning': task.status === 'running', 'text-success': task.status === 'finished'}">
+                                        [[ task.status ]]
+                                    </span>
+                                </td>
+                                <td>[[ task.size ]]</td>
+                                <td>[[ task.avg.toFixed(2) ]]</td>
+                                <td>[[ task.max.toFixed(2) ]]</td>
+                                <td>[[ task.min.toFixed(2) ]]</td>
+                                <td>[[ task.std.toFixed(2) ]]</td>
+                                <td>
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar" role="progressbar" 
+                                             :style="{width: (task.process * 100) + '%'}" 
+                                             :aria-valuenow="task.process * 100" 
+                                             aria-valuemin="0" aria-valuemax="100">
+                                            [[ (task.process * 100).toFixed(0) ]]%
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><small>[[ formatDate(task.last_update) ]]</small></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div v-if="experiments.length === 0 && !loading" class="alert alert-info">
+            No evaluation results found.
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            delimiters: ['[[', ']]'],
+            data() {
+                return {
+                    experiments: [],
+                    loading: false,
+                    error: null,
+                    lastUpdate: '-',
+                    timer: null
+                }
+            },
+            computed: {
+                sortedExperiments() {
+                    return [...this.experiments].sort((a, b) => {
+                        const dateA = new Date(a.last_update);
+                        const dateB = new Date(b.last_update);
+                        return dateB - dateA;
+                    });
+                }
+            },
+            methods: {
+                formatDate(dateString) {
+                    if (!dateString) return '-';
+                    const date = new Date(dateString);
+                    if (isNaN(date.getTime()) || date.getTime() === 0) return '-'; // Handle epoch 0 or invalid dates
+                    return date.toLocaleString();
+                },
+                async fetchData() {
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/api/results');
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        const data = await response.json();
+                        this.experiments = data;
+                        this.lastUpdate = new Date().toLocaleTimeString();
+                        this.error = null;
+                    } catch (err) {
+                        this.error = 'Failed to fetch data: ' + err.message;
+                        console.error('Fetch error:', err);
+                    } finally {
+                        this.loading = false;
+                    }
+                }
+            },
+            mounted() {
+                this.fetchData();
+                this.timer = setInterval(this.fetchData, 2000); // Poll every 2 seconds
+            },
+            beforeUnmount() {
+                if (this.timer) clearInterval(this.timer);
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
