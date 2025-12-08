@@ -1,4 +1,8 @@
 def apply_lora(model, args):
+
+    from .slicefine import register_slicefine_method
+    register_slicefine_method() # register slicefine method to peft
+
     if args.peft.type == "lora":
         from peft import LoraConfig, get_peft_model
         config = LoraConfig(
@@ -122,5 +126,31 @@ def apply_lora(model, args):
             loraplus_lr_ratio=2.0,
         )
         return optimizer, model
+    
+    elif args.peft.type == "slicefine":
+        from .slicefine import SliceFineConfig
+        from peft import get_peft_model
+        config = SliceFineConfig(
+            r=args.peft.r,
+            slice_mode=getattr(args.peft, "slice_mode", "column"),
+            slice_position=getattr(args.peft, "slice_position", 0),
+            target_modules=args.peft.target_modules,
+            bias="all" if getattr(args.peft, "bias", False) else "none"
+        )
+        print(f"[SliceFine] Applying SliceFine with rank={config.r}, modules={config.target_modules}")
+        
+        peft_model = get_peft_model(model, config)
+        
+        peft_model.print_trainable_parameters()
+        
+        trainable_params = [p for p in peft_model.parameters() if p.requires_grad]
+        if len(trainable_params) == 0:
+            raise RuntimeError(
+                "[SliceFine Error] No trainable parameters found! \n"
+                "1. Check if 'target_modules' match the model architecture.\n"
+                "2. Check if 'part_T' is correctly set to requires_grad=True."
+            )
+        return None, peft_model
+
     else:
         raise ValueError(f"Unsupported PEFT type: {args.peft.type}")
