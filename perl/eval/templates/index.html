@@ -42,7 +42,10 @@
                     <div class="col-md-2"><strong>Max:</strong> [[ exp.max.toFixed(2) ]]</div>
                     <div class="col-md-2"><strong>Min:</strong> [[ exp.min.toFixed(2) ]]</div>
                     <div class="col-md-2"><strong>Std:</strong> [[ exp.std.toFixed(2) ]]</div>
-                    <div class="col-md-2"><strong>Dir:</strong> <small>[[ exp.result_dir ]]</small></div>
+                    <div class="col-md-2"><strong>Truncated:</strong> [[ (exp.truncated * 100).toFixed(2) ]]%</div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12"><strong>Dir:</strong> <small>[[ exp.result_dir ]]</small></div>
                 </div>
 
                 <div class="table-responsive">
@@ -57,8 +60,10 @@
                                 <th>Max</th>
                                 <th>Min</th>
                                 <th>Std</th>
-                                <th>Process</th>
+                                <th>Truncated</th>
                                 <th>Last Update</th>
+                                <th>Process</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -75,6 +80,8 @@
                                 <td>[[ task.max.toFixed(2) ]]</td>
                                 <td>[[ task.min.toFixed(2) ]]</td>
                                 <td>[[ task.std.toFixed(2) ]]</td>
+                                <td>[[ (task.truncated * 100).toFixed(2) ]]%</td>
+                                <td><small>[[ formatDate(task.last_update) ]]</small></td>
                                 <td>
                                     <div class="progress" style="height: 20px;">
                                         <div class="progress-bar" role="progressbar" 
@@ -85,7 +92,27 @@
                                         </div>
                                     </div>
                                 </td>
-                                <td><small>[[ formatDate(task.last_update) ]]</small></td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a v-if="task.status === 'running'" 
+                                           :href="'/download/' + task.relative_path + '/output.jsonl'" 
+                                           class="btn btn-outline-primary" 
+                                           title="Download Output">Output</a>
+                                        <a v-if="task.status === 'running'" 
+                                           :href="'/download/' + task.relative_path + '/process.txt'" 
+                                           class="btn btn-outline-secondary" 
+                                           title="Download Process">Process</a>
+                        
+                                        <a v-if="task.status === 'finished'" 
+                                           :href="'/download/' + task.relative_path + '/output.jsonl'" 
+                                           class="btn btn-outline-primary" 
+                                           title="Download Output">Output</a>
+                                        <a v-if="task.status === 'finished'" 
+                                           :href="'/download/' + task.relative_path + '/result.jsonl'" 
+                                           class="btn btn-outline-success" 
+                                           title="Download Results">Results</a>
+                                    </div>
+                                </td>
                             </tr>
                         </tbody>
                     </table>

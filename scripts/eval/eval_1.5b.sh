@@ -6,8 +6,8 @@ ulimit -n 65535
 PROJECT_DIR="."
 BASE_MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/DeepSeek-R1-Distill-Qwen-1.5B"
 
-# DATASET="aime2024@32,aime2025@32,amc2023@32,math500@4,minerva@4,hmmt2025@32"
-DATASET="aime2024@512,aime2025@512" # for test
+DATASET="aime2024@512,aime2025@512,amc2023@32,math500@8,minerva@8,hmmt2025@32"
+# DATASET="aime2024@512,aime2025@512" # for test
 
 export PYTHONPATH="${PROJECT_DIR}"
 export HF_ENDPOINT="https://hf-mirror.com"
@@ -20,7 +20,7 @@ MAX_NEW_TOKENS="31744"
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 DP_SIZE=8
 TP_SIZE=1
-MAX_NUM_REQUEST=1024
+MAX_NUM_REQUEST=2000
 GPU_MEMORY_UTILIZATION=0.95
 
 function kill_vllm_processes() {
@@ -75,3 +75,8 @@ eval_model_with_adapter \
   "${PROJECT_DIR}/outputs/eval/test-full-20251208" \
   "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
   ""
+
+eval_model_with_adapter \
+  "${PROJECT_DIR}/outputs/eval/lora_bsz_32_1920-20251208" \
+  "${BASE_MODEL_PATH}" \
+  "${PROJECT_DIR}/ckpts/lora_bsz_32_1920"

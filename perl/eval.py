@@ -397,6 +397,7 @@ def evaluate_dataset_results(
 
                 responses = []
                 scores = []
+                truncated_flags = []
 
                 for rid in range(rollout_n):
                     if rid not in rollout_dict:
@@ -405,6 +406,10 @@ def evaluate_dataset_results(
                         )
                     resp = rollout_dict.get(rid, "")
                     responses.append(resp)
+
+                    # Check if response is truncated (doesn't contain \boxed)
+                    is_truncated = "\\boxed" not in resp if resp else True
+                    truncated_flags.append(1.0 if is_truncated else 0.0)
 
                     if resp:
                         try:
@@ -437,6 +442,9 @@ def evaluate_dataset_results(
                 else:
                     avg_val = max_val = min_val = std_val = 0.0
 
+                # Calculate truncated average (proportion of truncated responses)
+                truncated_avg = statistics.mean(truncated_flags) if truncated_flags else 0.0
+
                 record = {
                     "problem_id": problem_id,
                     "prompt": prompt,
@@ -446,6 +454,7 @@ def evaluate_dataset_results(
                     "max": max_val,
                     "min": min_val,
                     "std": std_val,
+                    "truncated": truncated_avg,
                     "data_source": dataset_name,
                 }
                 rf.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -457,6 +466,7 @@ def evaluate_dataset_results(
                         "max": max_val,
                         "min": min_val,
                         "std": std_val,
+                        "truncated": truncated_avg,
                     }
                 )
 
@@ -467,9 +477,10 @@ def evaluate_dataset_results(
                 "max": statistics.mean(x["max"] for x in raw_stats_list),
                 "min": statistics.mean(x["min"] for x in raw_stats_list),
                 "std": statistics.mean(x["std"] for x in raw_stats_list),
+                "truncated": statistics.mean(x["truncated"] for x in raw_stats_list),
             }
         else:
-            summary = {"avg": 0.0, "max": 0.0, "min": 0.0, "std": 0.0}
+            summary = {"avg": 0.0, "max": 0.0, "min": 0.0, "std": 0.0, "truncated": 0.0}
 
         final_json = {
             "data_source": dataset_name,

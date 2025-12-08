@@ -4,7 +4,7 @@ import sys
 import json
 from typing import List
 from enum import Enum
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, send_from_directory, abort
 from datetime import datetime
 
 app = Flask(__name__)
@@ -26,12 +26,14 @@ class TaskResult:
     max: float = 0.0
     min: float = 0.0
     std: float = 0.0
+    truncated: float = 0.0
     process: float = 1.0
     last_update: datetime = datetime.fromtimestamp(0)
 
     def to_dict(self):
         return {
             "task_name": self.task_name,
+            "relative_path": os.path.relpath(self.result_dir, RESULT_DIR),
             "rollout_n": self.rollout_n,
             "result_dir": self.result_dir,
             "status": self.status.value,
@@ -40,6 +42,7 @@ class TaskResult:
             "max": self.max,
             "min": self.min,
             "std": self.std,
+            "truncated": self.truncated,
             "process": self.process,
             "last_update": self.last_update.isoformat(),
         }
@@ -52,6 +55,7 @@ class TaskResult:
         self.max = 0.0
         self.min = 0.0
         self.std = 0.0
+        self.truncated = 0.0
         self.size = 0
         self.process = 1.0
         self.status = StatusType.FINISHED
@@ -84,6 +88,7 @@ class TaskResult:
             self.max = float(result_json["summary"]["max"])
             self.min = float(result_json["summary"]["min"])
             self.std = float(result_json["summary"]["std"])
+            self.truncated = float(result_json["summary"].get("truncated", 0.0))
             self.last_update = datetime.fromtimestamp(
                 os.path.getmtime(os.path.join(result_dir, "result.json"))
             )
@@ -107,6 +112,7 @@ class ExpResult:
     max: float
     min: float
     std: float
+    truncated: float
     process: float
     last_update: datetime = datetime.fromtimestamp(0)
 
@@ -121,6 +127,7 @@ class ExpResult:
             "max": self.max,
             "min": self.min,
             "std": self.std,
+            "truncated": self.truncated,
             "process": self.process,
             "last_update": self.last_update.isoformat(),
         }
@@ -143,6 +150,9 @@ class ExpResult:
             self.std = (
                 self.std * self.size + task_result.std * task_result.size
             ) / full_size
+            self.truncated = (
+                self.truncated * self.size + task_result.truncated * task_result.size
+            ) / full_size
             self.process = (
                 self.process * self.size + task_result.process * task_result.size
             ) / full_size
@@ -161,6 +171,7 @@ class ExpResult:
         self.max = 0.0
         self.min = 0.0
         self.std = 0.0
+        self.truncated = 0.0
         self.process = 1.0
         self.last_update = datetime.fromtimestamp(0)
 
@@ -205,6 +216,18 @@ def api_results():
     return jsonify([r.to_dict() for r in results])
 
 
+@app.route("/download/<path:filepath>")
+def download_file(filepath):
+    if not RESULT_DIR:
+        app.logger.error("RESULT_DIR is not set")
+        abort(404)
+    try:
+        return send_from_directory(RESULT_DIR, filepath)
+    except Exception as e:
+        app.logger.error(f"Download error: {e}, dir={RESULT_DIR}, path={filepath}")
+        abort(404)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Monitor for evaluation results")
     parser.add_argument(
@@ -223,7 +246,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    RESULT_DIR = args.result_dir
+    RESULT_DIR = os.path.abspath(args.result_dir)
     if not os.path.exists(RESULT_DIR):
         print(f"Error: Result directory '{RESULT_DIR}' does not exist.")
         sys.exit(-1)
