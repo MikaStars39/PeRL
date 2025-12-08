@@ -4,74 +4,20 @@ import sys
 import time
 import torch
 import gc
-import os
 import argparse
 
 from typing import Any, Dict
-from datasets import load_dataset
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from pathlib import Path
 
 
-PROMPT_TEMPLATE = """{problem} Please reason step by step, and put your final answer within \\boxed{{}}."""
-
-DATASETS = {
-    "aime2024": ("HuggingFaceH4/aime_2024", "train"),
-    "aime2025": ("yentinglin/aime_2025", "train"),
-    "amc2023": ("zwhe99/amc23", "test"),
-    "math500": ("HuggingFaceH4/MATH-500", "test"),
-    "minerva": ("math-ai/minervamath", "test"),
-    "hmmt2025": ("FlagEval/HMMT_2025", "train"),
-}
-
-# ----- data utils -----
-
-# Ensure utils can be imported
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-try:
-    from utils import grade_answer_verl
-except ImportError:
-    # Fallback or strict requirement depending on your needs
-    def grade_answer_verl(response, truth):
-        return str(truth) in str(response)
-
-def load_dataset_from_hf(dataset_name: str):
-    if dataset_name in DATASETS:
-        hf_name, split = DATASETS[dataset_name]
-        return load_dataset(hf_name, split=split)
-    else:
-        raise ValueError(f"Unsupported dataset: {dataset_name}")
-
-def prepare_prompt(dataset_name: str, sample: Dict[str, Any]) -> str:
-    """Construct model input prompt based on sample, modify as needed."""
-    problem = None
-    if "problem" in sample:
-        problem = sample["problem"]
-    elif "question" in sample:
-        problem = sample["question"]
-    elif "prompt" in sample:
-        problem = sample["prompt"]
-    else:
-        raise ValueError(f"Unsupported sample format: {sample}")
-    return PROMPT_TEMPLATE.format(problem=problem)
-
-def score_response(dataset_name: str, response: str, sample: Dict[str, Any]) -> float:
-    ground_truth = None
-    if "answer" in sample:
-        ground_truth = sample["answer"]
-    elif "label" in sample:
-        ground_truth = sample["label"]
-    else:
-        raise ValueError(f"Unsupported sample format: {sample}")
-    return 1.0 if grade_answer_verl(response, str(ground_truth)) else 0.0
-
-
 # ------------------ model utils ---------------------
+
 
 def resolve_torch_dtype(dtype: Any) -> Any:
     """
-    Parse dtype string to torch.dtype, supporting auto/common aliases, 
+    Parse dtype string to torch.dtype, supporting auto/common aliases,
     compatible with older Transformers lacking get_torch_dtype.
     """
     if dtype is None:
@@ -94,6 +40,7 @@ def resolve_torch_dtype(dtype: Any) -> Any:
         if normalized in mapping:
             return mapping[normalized]
     raise ValueError(f"Unsupported dtype: {dtype}")
+
 
 def merge_model_if_needed(
     args: argparse.Namespace, result_dir: Path, logger: logging.Logger
@@ -150,6 +97,7 @@ def merge_model_if_needed(
 
 # ------------------ logging utils ---------------------
 
+
 class StreamToLogger:
     """Redirect stdout/stderr to logger to ensure output is recorded in both file and console."""
 
@@ -168,6 +116,7 @@ class StreamToLogger:
         if self._buffer:
             self.logger.log(self.level, self._buffer)
             self._buffer = ""
+
 
 def setup_logging(result_dir: Path) -> logging.Logger:
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -202,6 +151,7 @@ def setup_logging(result_dir: Path) -> logging.Logger:
     sys.stderr = StreamToLogger(stderr_logger, logging.ERROR)
 
     return logging.getLogger("eval_all")
+
 
 class StageContext:
     """Stage logging context to mark start/end and failure scenarios."""

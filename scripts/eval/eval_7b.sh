@@ -4,10 +4,11 @@ set -exo pipefail
 ulimit -n 65535
 
 PROJECT_DIR="."
-BASE_MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/DeepSeek-R1-Distill-Qwen-1.5B"
+BASE_MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/DeepSeek-R1-Distill-Qwen-7B"
 
 # DATASET="aime2024@32,aime2025@32,amc2023@32,math500@4,minerva@4,hmmt2025@32"
-DATASET="aime2024@512,aime2025@512" # for test
+# DATASET="aime2024@512,aime2025@512" # for test
+DATASET="aime2024@256,aime2025@256,math500@8" # for test
 
 export PYTHONPATH="${PROJECT_DIR}"
 export HF_ENDPOINT="https://hf-mirror.com"
@@ -62,16 +63,16 @@ function eval_model_with_adapter() {
 set +e
 
 eval_model_with_adapter \
-  "${PROJECT_DIR}/outputs/eval/deepseek-r1-1.5b" \
+  "${PROJECT_DIR}/outputs/eval/deepseek-r1-7b" \
   "${BASE_MODEL_PATH}" \
   ""
 
-eval_model_with_adapter \
-   "${PROJECT_DIR}/outputs/eval/test-perl-20251208" \
-   "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/ckpts/perl"
+# eval_model_with_adapter \
+#    "${PROJECT_DIR}/outputs/eval/test-perl-20251208" \
+#    "${BASE_MODEL_PATH}" \
+#    "${PROJECT_DIR}/ckpts/perl"
 
-eval_model_with_adapter \
-  "${PROJECT_DIR}/outputs/eval/test-full-20251208" \
-  "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
-  ""
+# eval_model_with_adapter \
+#   "${PROJECT_DIR}/outputs/eval/test-full-20251208" \
+#   "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
+#   ""

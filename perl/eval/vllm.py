@@ -1,4 +1,3 @@
-
 import argparse
 import logging
 import os
@@ -8,14 +7,32 @@ import sys
 import threading
 import time
 import urllib.request
-import asyncio
-import json
-import statistics
 import aiohttp
-from typing import List, Tuple, Iterable, Set, Any, Dict
+from typing import List, Tuple, Iterable
 from pathlib import Path
 
-from .utils import load_dataset_from_hf, prepare_prompt, score_response, StageContext
+
+def extract_vllm_args(unknown: List[str]) -> Tuple[List[str], List[str]]:
+    vllm_args: List[str] = []
+    leftover: List[str] = []
+    idx = 0
+    while idx < len(unknown):
+        token = unknown[idx]
+        if token.startswith("--vllm-"):
+            stripped = "--" + token[len("--vllm-") :]
+            if "=" in token:
+                _, value = token.split("=", 1)
+                vllm_args.extend([stripped, value])
+            elif idx + 1 < len(unknown) and not unknown[idx + 1].startswith("-"):
+                vllm_args.extend([stripped, unknown[idx + 1]])
+                idx += 1
+            else:
+                vllm_args.append(stripped)
+        else:
+            leftover.append(token)
+        idx += 1
+    return vllm_args, leftover
+
 
 def build_vllm_command(
     model_path: Path, port: int, args: argparse.Namespace, vllm_args: List[str]
@@ -47,11 +64,13 @@ def build_vllm_command(
     cmd.extend(vllm_args)
     return cmd
 
+
 def pipe_to_logger(
     stream: Iterable[str], logger: logging.Logger, level: int, prefix: str
 ) -> None:
     for line in stream:
         logger.log(level, "%s%s", prefix, line.rstrip("\n"))
+
 
 def start_vllm_processes(
     model_path: Path,
@@ -71,7 +90,7 @@ def start_vllm_processes(
         gpu_ids = list(range(start_gpu_id, end_gpu_id))
 
         # Check for out-of-bounds (based on args.num_gpus or simple logic, assuming user config is correct)
-        
+
         env_local = env.copy()
         env_local["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_ids))
 
@@ -110,6 +129,7 @@ def start_vllm_processes(
             ).start()
     return processes, ports
 
+
 def stop_vllm_processes(
     processes: List[subprocess.Popen], logger: logging.Logger
 ) -> None:
@@ -119,7 +139,9 @@ def stop_vllm_processes(
                 logger.info("Attempting to terminate vLLM process (pid=%d).", proc.pid)
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Exception during process termination (pid=%d): %s", proc.pid, exc)
+                logger.warning(
+                    "Exception during process termination (pid=%d): %s", proc.pid, exc
+                )
     for proc in processes:
         if proc.poll() is None:
             try:
@@ -129,6 +151,7 @@ def stop_vllm_processes(
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 except Exception:
                     pass
+
 
 def wait_for_vllm_ready(
     port: int, process: subprocess.Popen, timeout: float, logger: logging.Logger
@@ -148,6 +171,7 @@ def wait_for_vllm_ready(
             time.sleep(2)
     logger.error("Timeout waiting for vLLM at port %d.", port)
     return False
+
 
 async def generate_with_vllm_async(
     session: aiohttp.ClientSession, prompt: str, port: int, args: argparse.Namespace
@@ -183,311 +207,3 @@ async def generate_with_vllm_async(
         return content["choices"][0]["message"]["content"]
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"Failed to parse vLLM response: {content}") from exc
-
-# -------------- engine utils ---------------------
-
-class ProgressVisualizer:
-    def __init__(
-        self,
-        filepath: Path,
-        problem_n: int,
-        rollout_n: int,
-        completed: Set[Tuple[int, int]],
-    ) -> None:
-        self.filepath = filepath
-        self.problem_n = problem_n
-        self.rollout_n = rollout_n
-        # Row: rollout_id, Col: problem_id
-        self.grid = [["." for _ in range(problem_n)] for _ in range(rollout_n)]
-        for pid, rid in completed:
-            if 0 <= rid < rollout_n and 0 <= pid < problem_n:
-                self.grid[rid][pid] = "X"
-        self.lock = asyncio.Lock()
-        self._write_sync()
-
-    def _write_sync(self) -> None:
-        try:
-            with self.filepath.open("w", encoding="utf-8") as f:
-                for row in self.grid:
-                    f.write("".join(row) + "\n")
-        except Exception:
-            pass
-
-    async def update(self, problem_id: int, rollout_id: int) -> None:
-        if 0 <= rollout_id < self.rollout_n and 0 <= problem_id < self.problem_n:
-            async with self.lock:
-                if self.grid[rollout_id][problem_id] != "X":
-                    self.grid[rollout_id][problem_id] = "X"
-                    await asyncio.get_running_loop().run_in_executor(
-                        None, self._write_sync
-                    )
-
-    def cleanup(self) -> None:
-        try:
-            if self.filepath.exists():
-                self.filepath.unlink()
-        except Exception:
-            pass
-
-async def generate_responses(
-    args: argparse.Namespace,
-    dataset_name: str,
-    rollout_n: int,
-    ports: List[int],
-    logger: logging.Logger,
-    semaphores: Dict[int, asyncio.Semaphore],
-) -> None:
-    """
-    Asynchronously generate responses and save to output.jsonl.
-    Implementation: Read existing output.jsonl to build cache, only generate missing entries.
-    Generated results are appended to output.jsonl in real-time.
-    """
-    dataset_dir = Path(args.result_dir) / dataset_name
-    output_file = dataset_dir / "output.jsonl"
-    dataset_dir.mkdir(parents=True, exist_ok=True)
-
-    with StageContext(logger, f"C[{dataset_name}].1", "Reading cached output"):
-        generated_results: List[Dict[str, Any]] = []
-        cache: Set[Tuple[int, int]] = set()
-
-        if output_file.exists():
-            with output_file.open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        if (
-                            "problem_id" in data
-                            and "rollout_id" in data
-                            and "response" in data
-                            and data["response"] != ""
-                        ):
-                            generated_results.append(data)
-                            cache.add((data["problem_id"], data["rollout_id"]))
-                    except json.JSONDecodeError:
-                        logger.warning("Invalid JSON line in output.jsonl, skipped.")
-
-        logger.info("Loaded cache entries: %d", len(generated_results))
-
-    with StageContext(logger, f"C[{dataset_name}].2", "Preparing generation tasks"):
-        ds = load_dataset_from_hf(dataset_name)
-        # max_concurrent_per_dp and semaphores are now handled externally and passed in
-
-        tasks_to_process: List[Tuple[int, int, str, int]] = []
-        ports_cycle = len(ports)
-
-        for idx, sample in enumerate(ds):
-            prompt = prepare_prompt(dataset_name, sample)
-            for rollout_id in range(rollout_n):
-                if (idx, rollout_id) in cache:
-                    continue
-                # port_idx = idx % ports_cycle
-                port_idx = (idx * rollout_n + rollout_id) % ports_cycle
-                tasks_to_process.append((idx, rollout_id, prompt, port_idx))
-
-        logger.info("New requests to generate: %d", len(tasks_to_process))
-
-        visualizer = ProgressVisualizer(
-            dataset_dir / "process.txt", len(ds), rollout_n, cache
-        )
-
-        if not tasks_to_process:
-            logger.info("All requests exist in cache, no generation needed.")
-            visualizer.cleanup()
-            return
-
-    with StageContext(logger, f"C[{dataset_name}].3", "Parallel Generation"):
-        file_lock = asyncio.Lock()
-
-        async def generate_one_task(
-            problem_id: int,
-            rollout_id: int,
-            prompt: str,
-            port_idx: int,
-            session: aiohttp.ClientSession,
-        ) -> None:
-            port = ports[port_idx]
-            semaphore = semaphores[port]
-            response = ""
-
-            async with semaphore:
-                try:
-                    response = await generate_with_vllm_async(
-                        session, prompt, port, args
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "Generation failed problem=%06d rollout=%03d port=%d: %s",
-                        problem_id,
-                        rollout_id,
-                        port,
-                        exc,
-                    )
-                    return
-
-            record = {
-                "problem_id": problem_id,
-                "rollout_id": rollout_id,
-                "response": response,
-            }
-
-            generated_results.append(record)
-
-            async with file_lock:
-                with output_file.open("a", encoding="utf-8") as f:
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-            await visualizer.update(problem_id, rollout_id)
-
-        connector = aiohttp.TCPConnector(limit=0, limit_per_host=0)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            tasks = [
-                generate_one_task(pid, rid, pmt, pidx, session)
-                for pid, rid, pmt, pidx in tasks_to_process
-            ]
-            await asyncio.gather(*tasks)
-            visualizer.cleanup()
-
-        logger.info("Dataset %s generation complete, results saved to %s", dataset_name, output_file)
-
-def evaluate_dataset_results(
-    args: argparse.Namespace,
-    dataset_name: str,
-    rollout_n: int,
-    logger: logging.Logger,
-) -> Dict[str, Dict[int, float]]:
-    """
-    Evaluation stage: Read output.jsonl, score and generate result.jsonl, return stats metrics.
-    """
-    dataset_dir = Path(args.result_dir) / dataset_name
-    output_file = dataset_dir / "output.jsonl"
-    result_file = dataset_dir / "result.jsonl"
-    result_json_file = dataset_dir / "result.json"
-
-    with StageContext(logger, f"D[{dataset_name}].1", "Loading model output"):
-        if not output_file.exists():
-            raise ValueError(f"output.jsonl not found, cannot evaluate: {dataset_name}")
-
-        outputs_map: Dict[int, List[Tuple[int, str]]] = {}
-        with output_file.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    d = json.loads(line)
-                    if "problem_id" in d and "rollout_id" in d:
-                        outputs_map.setdefault(d["problem_id"], []).append(
-                            (d["rollout_id"], d.get("response", ""))
-                        )
-                except json.JSONDecodeError:
-                    pass
-
-    with StageContext(logger, f"D[{dataset_name}].2", "Loading original dataset"):
-        ds = load_dataset_from_hf(dataset_name)
-
-    with StageContext(logger, f"D[{dataset_name}].3", "Parallel Evaluation & Metrics"):
-        records_for_metrics: List[Dict[str, Any]] = []
-        raw_stats_list: List[Dict[str, Any]] = []
-
-        with result_file.open("w", encoding="utf-8") as rf:
-            for idx, sample in enumerate(ds):
-                problem_id = idx
-                prompt = prepare_prompt(dataset_name, sample)
-
-                rollouts = outputs_map.get(problem_id, [])
-                # Sort by rollout_id
-                rollouts.sort(key=lambda x: x[0])
-                rollout_dict = {r[0]: r[1] for r in rollouts}
-
-                responses = []
-                scores = []
-
-                for rid in range(rollout_n):
-                    if rid not in rollout_dict:
-                        raise ValueError(
-                            f"Missing result: problem_id={problem_id} rollout_id={rid}. Please check if generation requests failed."
-                        )
-                    resp = rollout_dict.get(rid, "")
-                    responses.append(resp)
-
-                    if resp:
-                        try:
-                            s_res = score_response(dataset_name, resp, sample)
-                            if isinstance(s_res, tuple):
-                                score = float(s_res[0])
-                            else:
-                                score = float(s_res)
-                        except Exception as e:
-                            logger.warning("Scoring error p=%d r=%d: %s", problem_id, rid, e)
-                            score = 0.0
-                    else:
-                        score = 0.0
-                    scores.append(score)
-
-                    records_for_metrics.append(
-                        {"problem_id": problem_id, "rollout_id": rid, "score": score}
-                    )
-
-                if scores:
-                    avg_val = statistics.mean(scores)
-                    max_val = max(scores)
-                    min_val = min(scores)
-                    try:
-                        std_val = statistics.stdev(scores)
-                    except statistics.StatisticsError:
-                        std_val = 0.0
-                else:
-                    avg_val = max_val = min_val = std_val = 0.0
-
-                record = {
-                    "problem_id": problem_id,
-                    "prompt": prompt,
-                    "responses": responses,
-                    "scores": scores,
-                    "avg": avg_val,
-                    "max": max_val,
-                    "min": min_val,
-                    "std": std_val,
-                    "data_source": dataset_name,
-                }
-                rf.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-                raw_stats_list.append(
-                    {
-                        "problem_id": problem_id,
-                        "avg": avg_val,
-                        "max": max_val,
-                        "min": min_val,
-                        "std": std_val,
-                    }
-                )
-
-    with StageContext(logger, f"D[{dataset_name}].4", "Summarizing and writing files"):
-        if raw_stats_list:
-            summary = {
-                "avg": statistics.mean(x["avg"] for x in raw_stats_list),
-                "max": statistics.mean(x["max"] for x in raw_stats_list),
-                "min": statistics.mean(x["min"] for x in raw_stats_list),
-                "std": statistics.mean(x["std"] for x in raw_stats_list),
-            }
-        else:
-            summary = {"avg": 0.0, "max": 0.0, "min": 0.0, "std": 0.0}
-
-        final_json = {
-            "data_source": dataset_name,
-            "rollout_n": rollout_n,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "summary": summary,
-            "raw": raw_stats_list,
-            "response_example": [
-                outputs_map[0][0] if outputs_map else [],
-            ],
-        }
-
-        with result_json_file.open("w", encoding="utf-8") as f:
-            json.dump(final_json, f, indent=2, ensure_ascii=False)
-
-        logger.info("Evaluation complete, results written to %s and %s", result_file, result_json_file)
