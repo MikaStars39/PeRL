@@ -88,9 +88,11 @@ class TaskResult:
             self.max = float(result_json["summary"]["max"])
             self.min = float(result_json["summary"]["min"])
             self.std = float(result_json["summary"]["std"])
-            if result_json['summary'].get('format_score_avg', None) is not None:
-                self.format_score_avg = float(result_json["summary"]["format_score_avg"])
-            elif result_json['summary'].get('truncated', None) is not None:
+            if result_json["summary"].get("format_score_avg", None) is not None:
+                self.format_score_avg = float(
+                    result_json["summary"]["format_score_avg"]
+                )
+            elif result_json["summary"].get("truncated", None) is not None:
                 self.format_score_avg = 1 - float(result_json["summary"]["truncated"])
             else:
                 self.format_score_avg = 0.0

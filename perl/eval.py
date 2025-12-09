@@ -53,7 +53,9 @@ def load_dataset_from_hf(dataset_name: str):
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
 
-def prepare_prompt(dataset_name: str, sample: Dict[str, Any], prompt_template: str) -> str:
+def prepare_prompt(
+    dataset_name: str, sample: Dict[str, Any], prompt_template: str
+) -> str:
     """Construct model input prompt based on sample, modify as needed."""
     problem = None
     if "problem" in sample:
@@ -67,7 +69,9 @@ def prepare_prompt(dataset_name: str, sample: Dict[str, Any], prompt_template: s
     return prompt_template.format(problem=problem)
 
 
-def score_response(dataset_name: str, response: str, sample: Dict[str, Any]) -> Tuple[float, float]:
+def score_response(
+    dataset_name: str, response: str, sample: Dict[str, Any]
+) -> Tuple[float, float]:
     """
     Returns:
       - score: float, score of the response
@@ -271,6 +275,7 @@ async def generate_responses(
                             and "rollout_id" in data
                             and "response" in data
                             and data["response"] != ""
+                            and int(data["rollout_id"]) < rollout_n
                         ):
                             generated_results.append(data)
                             cache.add((data["problem_id"], data["rollout_id"]))

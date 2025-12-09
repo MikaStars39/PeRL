@@ -7,7 +7,7 @@ PROJECT_DIR="."
 BASE_MODEL_PATH="/root/models/DeepSeek-R1-Distill-Qwen-1.5B"
 
 # DATASET="aime2024@512,aime2025@512,amc2023@32,math500@8,minerva@8,hmmt2025@32"
-DATASET="aime2024@512,aime2025@512,amc2023@32,math500@4,minerva@4,hmmt2025@32"
+DATASET="aime2024@32,aime2025@32,amc2023@32,math500@4,minerva@4,hmmt2025@32"
 # DATASET="aime2024@512,aime2025@512" # for test
 
 export PYTHONPATH="${PROJECT_DIR}"
@@ -78,3 +78,29 @@ eval_model_with_adapter \
   "${PROJECT_DIR}/outputs/eval/openr1-test-full-20251208" \
   "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
   ""
+
+
+function eval_model_with_adapter_from_hf() {
+  mkdir -p "${PROJECT_DIR}/ckpts/$1/$2";
+
+  hf download MikaStars39/PeRL \
+      --repo-type model \
+      --local-dir "${PROJECT_DIR}/ckpts/" \
+      --include "$1/$2/*";
+
+  ls -a "${PROJECT_DIR}/ckpts/$1/$2";
+
+  eval_model_with_adapter \
+      "${PROJECT_DIR}/outputs/eval/openr1-$1___$2" \
+      "${BASE_MODEL_PATH}" \
+      "${PROJECT_DIR}/ckpts/$1/$2";
+}
+
+eval_model_with_adapter_from_hf "dapo_dora_qwen2_5_1_5b_20251126_115730"      "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_ia3_qwen2_5_1_5b_20251128_120647"       "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_layernorm_qwen2_5_1_5b_20251127_195534" "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_lora_qwen_1_5b"                         "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_milora_qwen2_5_1_5b_20251126_224006"    "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_miss_qwen2_5_1_5b_20251124_220354"      "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_pissa_qwen2_5_1_5b_20251126_192154"     "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_vera_qwen2_5_1_5b_20251126_190555"      "checkpoint-1024"
