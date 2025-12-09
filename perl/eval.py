@@ -20,7 +20,7 @@ from perl.eval.vllm import (
     wait_for_vllm_ready,
     generate_with_vllm_async,
 )
-from perl.eval.grader import grade_answer_verl
+from perl.eval.grader import grade_answer_perl
 
 
 PROMPT_TEMPLATES = {
@@ -66,7 +66,12 @@ def prepare_prompt(dataset_name: str, sample: Dict[str, Any], prompt_template: s
     return prompt_template.format(problem=problem)
 
 
-def score_response(dataset_name: str, response: str, sample: Dict[str, Any]) -> float:
+def score_response(dataset_name: str, response: str, sample: Dict[str, Any]) -> Tuple[float, float]:
+    """
+    Returns:
+      - score: float, score of the response
+      - format_score: float, score of the response format
+    """
     ground_truth = None
     if "answer" in sample:
         ground_truth = sample["answer"]
@@ -74,7 +79,7 @@ def score_response(dataset_name: str, response: str, sample: Dict[str, Any]) -> 
         ground_truth = sample["label"]
     else:
         raise ValueError(f"Unsupported sample format: {sample}")
-    return 1.0 if grade_answer_verl(response, str(ground_truth)) else 0.0
+    return grade_answer_perl(response, str(ground_truth))
 
 
 def parse_args() -> Tuple[argparse.Namespace, List[str], List[str]]:
@@ -414,7 +419,7 @@ def evaluate_dataset_results(
 
                 responses = []
                 scores = []
-                truncated_flags = []
+                format_scores = []
 
                 for rid in range(rollout_n):
                     if rid not in rollout_dict:
@@ -424,25 +429,12 @@ def evaluate_dataset_results(
                     resp = rollout_dict.get(rid, "")
                     responses.append(resp)
 
-                    # Check if response is truncated (doesn't contain \boxed)
-                    is_truncated = "\\boxed" not in resp if resp else True
-                    truncated_flags.append(1.0 if is_truncated else 0.0)
-
                     if resp:
-                        try:
-                            s_res = score_response(dataset_name, resp, sample)
-                            if isinstance(s_res, tuple):
-                                score = float(s_res[0])
-                            else:
-                                score = float(s_res)
-                        except Exception as e:
-                            logger.warning(
-                                "Scoring error p=%d r=%d: %s", problem_id, rid, e
-                            )
-                            score = 0.0
+                        score, format_score = score_response(dataset_name, resp, sample)
                     else:
-                        score = 0.0
+                        score, format_score = 0.0, 0.0
                     scores.append(score)
+                    format_scores.append(format_score)
 
                     records_for_metrics.append(
                         {"problem_id": problem_id, "rollout_id": rid, "score": score}
@@ -459,8 +451,9 @@ def evaluate_dataset_results(
                 else:
                     avg_val = max_val = min_val = std_val = 0.0
 
-                # Calculate truncated average (proportion of truncated responses)
-                truncated_avg = statistics.mean(truncated_flags) if truncated_flags else 0.0
+                format_score_avg = (
+                    statistics.mean(format_scores) if format_scores else 0.0
+                )
 
                 record = {
                     "problem_id": problem_id,
@@ -471,7 +464,7 @@ def evaluate_dataset_results(
                     "max": max_val,
                     "min": min_val,
                     "std": std_val,
-                    "truncated": truncated_avg,
+                    "format_score_avg": format_score_avg,
                     "data_source": dataset_name,
                 }
                 rf.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -483,7 +476,7 @@ def evaluate_dataset_results(
                         "max": max_val,
                         "min": min_val,
                         "std": std_val,
-                        "truncated": truncated_avg,
+                        "format_score_avg": format_score_avg,
                     }
                 )
 
@@ -494,10 +487,18 @@ def evaluate_dataset_results(
                 "max": statistics.mean(x["max"] for x in raw_stats_list),
                 "min": statistics.mean(x["min"] for x in raw_stats_list),
                 "std": statistics.mean(x["std"] for x in raw_stats_list),
-                "truncated": statistics.mean(x["truncated"] for x in raw_stats_list),
+                "format_score_avg": statistics.mean(
+                    x["format_score_avg"] for x in raw_stats_list
+                ),
             }
         else:
-            summary = {"avg": 0.0, "max": 0.0, "min": 0.0, "std": 0.0, "truncated": 0.0}
+            summary = {
+                "avg": 0.0,
+                "max": 0.0,
+                "min": 0.0,
+                "std": 0.0,
+                "format_score_avg": 0.0,
+            }
 
         final_json = {
             "data_source": dataset_name,

@@ -26,7 +26,7 @@ class TaskResult:
     max: float = 0.0
     min: float = 0.0
     std: float = 0.0
-    truncated: float = 0.0
+    format_score_avg: float = 0.0
     process: float = 1.0
     last_update: datetime = datetime.fromtimestamp(0)
 
@@ -42,7 +42,7 @@ class TaskResult:
             "max": self.max,
             "min": self.min,
             "std": self.std,
-            "truncated": self.truncated,
+            "format_score_avg": self.format_score_avg,
             "process": self.process,
             "last_update": self.last_update.isoformat(),
         }
@@ -55,7 +55,7 @@ class TaskResult:
         self.max = 0.0
         self.min = 0.0
         self.std = 0.0
-        self.truncated = 0.0
+        self.format_score_avg = 0.0
         self.size = 0
         self.process = 1.0
         self.status = StatusType.FINISHED
@@ -88,7 +88,12 @@ class TaskResult:
             self.max = float(result_json["summary"]["max"])
             self.min = float(result_json["summary"]["min"])
             self.std = float(result_json["summary"]["std"])
-            self.truncated = float(result_json["summary"].get("truncated", 0.0))
+            if result_json['summary'].get('format_score_avg', None) is not None:
+                self.format_score_avg = float(result_json["summary"]["format_score_avg"])
+            elif result_json['summary'].get('truncated', None) is not None:
+                self.format_score_avg = 1 - float(result_json["summary"]["truncated"])
+            else:
+                self.format_score_avg = 0.0
             self.last_update = datetime.fromtimestamp(
                 os.path.getmtime(os.path.join(result_dir, "result.json"))
             )
@@ -112,7 +117,7 @@ class ExpResult:
     max: float
     min: float
     std: float
-    truncated: float
+    format_score_avg: float
     process: float
     last_update: datetime = datetime.fromtimestamp(0)
 
@@ -127,7 +132,7 @@ class ExpResult:
             "max": self.max,
             "min": self.min,
             "std": self.std,
-            "truncated": self.truncated,
+            "format_score_avg": self.format_score_avg,
             "process": self.process,
             "last_update": self.last_update.isoformat(),
         }
@@ -150,8 +155,9 @@ class ExpResult:
             self.std = (
                 self.std * self.size + task_result.std * task_result.size
             ) / full_size
-            self.truncated = (
-                self.truncated * self.size + task_result.truncated * task_result.size
+            self.format_score_avg = (
+                self.format_score_avg * self.size
+                + task_result.format_score_avg * task_result.size
             ) / full_size
             self.process = (
                 self.process * self.size + task_result.process * task_result.size
@@ -171,7 +177,7 @@ class ExpResult:
         self.max = 0.0
         self.min = 0.0
         self.std = 0.0
-        self.truncated = 0.0
+        self.format_score_avg = 0.0
         self.process = 1.0
         self.last_update = datetime.fromtimestamp(0)
 

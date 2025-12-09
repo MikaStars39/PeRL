@@ -8,7 +8,7 @@ import re
 from pylatexenc import latex2text
 import sympy
 from sympy.parsing import sympy_parser
-from typing import Optional
+from typing import Optional, Tuple
 
 
 # Dan Hendrycks' code
@@ -485,7 +485,7 @@ def extract_answer(passage: str) -> str:
     return None
 
 
-def grade_answer_verl(solution_str, ground_truth):
+def grade_answer_verl(solution_str: str, ground_truth: str) -> bool:
     if not ground_truth:
         return False
     if "\\boxed" in ground_truth:
@@ -496,6 +496,36 @@ def grade_answer_verl(solution_str, ground_truth):
     return grade_answer_mathd(given_answer, ground_truth) or grade_answer_sympy(
         given_answer, ground_truth
     )
+
+def grade_extracted_answer_perl(given_answer: str, ground_truth: str) -> float:
+    if grade_answer_mathd(given_answer, ground_truth) or grade_answer_sympy(
+        given_answer, ground_truth
+    ):
+        return 1.0
+    else:
+        return 0.0
+
+def grade_answer_perl(solution_str: str, ground_truth: str) -> Tuple[float, float]:
+    # 处理 ground truth
+    if not ground_truth:
+        raise ValueError("No ground truth.")
+    if '\\boxed' in ground_truth:
+        ground_truth = extract_answer(ground_truth)
+        
+    # 如果答案已经被放在了 boxed 里
+    if '\\boxed' in solution_str:
+        given_answer = extract_boxed_answer(solution_str)
+        return grade_extracted_answer_perl(given_answer, ground_truth), 1.0
+    
+    # 如果答案被放在最后一行
+    if 'Answer:' in solution_str:
+        last_line = solution_str.strip().split('\n')[-1]    
+        if last_line.startswith('Answer:'):
+            given_answer = last_line[7:].strip()
+            return grade_extracted_answer_perl(given_answer, ground_truth), 1.0
+        
+    return 0.0, 0.0
+    
 
 
 def main():

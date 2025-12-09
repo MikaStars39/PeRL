@@ -101,8 +101,9 @@
             <div class="label">Std</div>
           </div>
           <div class="statistic">
-            <div class="value">[[ (exp.truncated * 100).toFixed(2) ]]%</div>
-            <div class="label">Truncated</div>
+            <!-- 需求: 将结果展示字段从 truncated 改为 format_score_avg；实现: 直接渲染 format_score_avg 百分比并同步表格标题 -->
+            <div class="value">[[ (exp.format_score_avg * 100).toFixed(2) ]]%</div>
+            <div class="label">Format</div>
           </div>
         </div>
       </div>
@@ -118,7 +119,7 @@
               <th>Max</th>
               <th>Min</th>
               <th>Std</th>
-              <th>Truncated</th>
+              <th>Format</th>
               <th>Last Update</th>
               <th>Actions</th>
             </tr>
@@ -136,7 +137,7 @@
               <td>[[ (task.max * 100).toFixed(1) ]]</td>
               <td>[[ (task.min * 100).toFixed(1) ]]</td>
               <td>[[ (task.std * 100).toFixed(1) ]]</td>
-              <td>[[ (task.truncated * 100).toFixed(2) ]]%</td>
+              <td>[[ (task.format_score_avg * 100).toFixed(1) ]]%</td>
               <td>[[ formatDate(task.last_update) ]]</td>
               <td>
                 <div class="ui mini buttons">

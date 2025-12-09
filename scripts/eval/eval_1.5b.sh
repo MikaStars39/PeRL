@@ -4,7 +4,7 @@ set -exo pipefail
 ulimit -n 65535
 
 PROJECT_DIR="."
-BASE_MODEL_PATH="/mnt/shared-storage-user/p1-shared/Qwen/DeepSeek-R1-Distill-Qwen-1.5B"
+BASE_MODEL_PATH="/root/models/DeepSeek-R1-Distill-Qwen-1.5B"
 
 DATASET="aime2024@512,aime2025@512,amc2023@32,math500@8,minerva@8,hmmt2025@32"
 # DATASET="aime2024@512,aime2025@512" # for test

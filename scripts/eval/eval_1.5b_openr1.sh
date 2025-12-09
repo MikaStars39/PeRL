@@ -4,9 +4,10 @@ set -exo pipefail
 ulimit -n 65535
 
 PROJECT_DIR="."
-BASE_MODEL_PATH="/root/models/DeepSeek-R1-Distill-Qwen-7B"
+BASE_MODEL_PATH="/root/models/DeepSeek-R1-Distill-Qwen-1.5B"
 
-DATASET="aime2024@128,aime2025@128,amc2023@32,math500@8,minerva@8,hmmt2025@32"
+# DATASET="aime2024@512,aime2025@512,amc2023@32,math500@8,minerva@8,hmmt2025@32"
+DATASET="aime2024@512,aime2025@512,amc2023@32,math500@4,minerva@4,hmmt2025@32"
 # DATASET="aime2024@512,aime2025@512" # for test
 
 export PYTHONPATH="${PROJECT_DIR}"
@@ -17,10 +18,11 @@ export LD_LIBRARY_PATH="/root/miniconda3/envs/perl/lib:/usr/local/nvidia/lib64:$
 TEMPERATURE="0.7"
 TOP_P="0.9"
 MAX_NEW_TOKENS="31744"
+# MAX_NEW_TOKENS="65536"
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 DP_SIZE=8
 TP_SIZE=1
-MAX_NUM_REQUEST=1200
+MAX_NUM_REQUEST=2000
 GPU_MEMORY_UTILIZATION=0.95
 
 function kill_vllm_processes() {
@@ -43,6 +45,7 @@ function eval_model_with_adapter() {
   mkdir -p "${RESULT_DIR}"
   
   CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} python "${PROJECT_DIR}/perl/eval.py" \
+    --prompt-format "open-r1" \
     --result-dir "${RESULT_DIR}" \
     --model "${MODEL_DIR}" \
     --adapter "${ADAPTER_DIR}" \
@@ -62,16 +65,16 @@ function eval_model_with_adapter() {
 set +e
 
 eval_model_with_adapter \
-  "${PROJECT_DIR}/outputs/eval/deepseek-r1-7b" \
+  "${PROJECT_DIR}/outputs/eval/openr1-deepseek-r1-1.5b" \
   "${BASE_MODEL_PATH}" \
   ""
 
 eval_model_with_adapter \
-  "${PROJECT_DIR}/outputs/eval/dapo_lora_7b_20251206_055352___step-1024" \
-  "${BASE_MODEL_PATH}" \
-  "${PROJECT_DIR}/ckpts/dapo_lora_7b_20251206_055352/checkpoint-1024"
+   "${PROJECT_DIR}/outputs/eval/openr1-test-perl-20251208" \
+   "${BASE_MODEL_PATH}" \
+   "${PROJECT_DIR}/ckpts/perl"
 
 eval_model_with_adapter \
-  "${PROJECT_DIR}/outputs/eval/dapo_lora_7b_20251206_055352___step-512" \
-  "${BASE_MODEL_PATH}" \
-  "${PROJECT_DIR}/ckpts/dapo_lora_7b_20251206_055352/checkpoint-512"
+  "${PROJECT_DIR}/outputs/eval/openr1-test-full-20251208" \
+  "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
+  ""
