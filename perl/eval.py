@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import atexit
 import logging
+import shutil
 import signal
 import sys
 import json
@@ -610,6 +611,16 @@ async def main() -> None:
 
     stop_vllm_processes(processes, logger)
     logger.info("All evaluation processes completed.")
+
+    if args.adapter:
+        merged_model_dir = Path(args.result_dir) / "model"
+        if merged_model_dir.exists():
+            logger.info("Deleting merged model directory: %s", merged_model_dir)
+            try:
+                shutil.rmtree(merged_model_dir)
+                logger.info("Merged model directory deleted.")
+            except Exception as e:
+                logger.warning("Failed to delete merged model directory: %s", e)
 
 
 if __name__ == "__main__":
