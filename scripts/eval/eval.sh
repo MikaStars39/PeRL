@@ -15,8 +15,8 @@ export HF_ENDPOINT="https://hf-mirror.com"
 TEMPERATURE="0.7"
 TOP_P="0.9"
 MAX_NEW_TOKENS="31744"
-CUDA_VISIBLE_DEVICES=0,1,2,3
-DP_SIZE=4
+CUDA_VISIBLE_DEVICES=0,3
+DP_SIZE=2
 TP_SIZE=1
 MAX_NUM_REQUEST=1024
 GPU_MEMORY_UTILIZATION=0.95
@@ -58,4 +58,4 @@ function eval_model_with_adapter() {
 }
 
 set +e
-eval_model_with_adapter "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B" ""
+eval_model_with_adapter "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B" "outputs/dapo_lora_qwen_1_5b_bsz_32_20251205_194748/checkpoint-512"
