@@ -255,7 +255,10 @@ if __name__ == "__main__":
         print(f"Viewer for evaluation results in {RESULT_DIR}")
         print(f"Serving at http://0.0.0.0:{args.port}")
 
-        # Disable reloader to avoid issues in some environments, or keep it for dev
+        # 配置模板自动重载，每次请求都会检查模板是否有修改，无需重启服务器
+        app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+        # debug=False 禁用自动重启
         app.run(host="0.0.0.0", port=args.port, debug=False)
 
     else:

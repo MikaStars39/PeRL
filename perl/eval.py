@@ -23,7 +23,16 @@ from perl.eval.vllm import (
 from perl.eval.grader import grade_answer_verl
 
 
-PROMPT_TEMPLATE = """{problem} Please reason step by step, and put your final answer within \\boxed{{}}."""
+PROMPT_TEMPLATES = {
+    "lighteval": """{problem} Please reason step by step, and put your final answer within \\boxed{{}}.""",
+    "open-r1": """
+Solve the following math problem step by step. The last line of your response should be of the form Answer: $Answer (without quotes) where $Answer is the answer to the problem.
+
+{problem}
+
+Remember to put your answer on its own line after "Answer:".
+""".strip(),
+}
 
 DATASETS = {
     "aime2024": ("HuggingFaceH4/aime_2024", "train"),
@@ -43,7 +52,7 @@ def load_dataset_from_hf(dataset_name: str):
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
 
-def prepare_prompt(dataset_name: str, sample: Dict[str, Any]) -> str:
+def prepare_prompt(dataset_name: str, sample: Dict[str, Any], prompt_template: str) -> str:
     """Construct model input prompt based on sample, modify as needed."""
     problem = None
     if "problem" in sample:
@@ -54,7 +63,7 @@ def prepare_prompt(dataset_name: str, sample: Dict[str, Any]) -> str:
         problem = sample["prompt"]
     else:
         raise ValueError(f"Unsupported sample format: {sample}")
-    return PROMPT_TEMPLATE.format(problem=problem)
+    return prompt_template.format(problem=problem)
 
 
 def score_response(dataset_name: str, response: str, sample: Dict[str, Any]) -> float:
@@ -87,6 +96,11 @@ def parse_args() -> Tuple[argparse.Namespace, List[str], List[str]]:
         "--dataset",
         default="aime2024",
         help="Dataset abbreviation to evaluate, comma separated (e.g., aime2024).",
+    )
+    parser.add_argument(
+        "--prompt-format",
+        default="lighteval",
+        help="Prompt format template to use.",
     )
     parser.add_argument(
         "--rollout-n",
@@ -266,8 +280,10 @@ async def generate_responses(
         tasks_to_process: List[Tuple[int, int, str, int]] = []
         ports_cycle = len(ports)
 
+        prompt_template = PROMPT_TEMPLATES[args.prompt_format]
+
         for idx, sample in enumerate(ds):
-            prompt = prepare_prompt(dataset_name, sample)
+            prompt = prepare_prompt(dataset_name, sample, prompt_template)
             for rollout_id in range(rollout_n):
                 if (idx, rollout_id) in cache:
                     continue
@@ -385,10 +401,11 @@ def evaluate_dataset_results(
         records_for_metrics: List[Dict[str, Any]] = []
         raw_stats_list: List[Dict[str, Any]] = []
 
+        prompt_template = PROMPT_TEMPLATES[args.prompt_format]
         with result_file.open("w", encoding="utf-8") as rf:
             for idx, sample in enumerate(ds):
                 problem_id = idx
-                prompt = prepare_prompt(dataset_name, sample)
+                prompt = prepare_prompt(dataset_name, sample, prompt_template)
 
                 rollouts = outputs_map.get(problem_id, [])
                 # Sort by rollout_id
