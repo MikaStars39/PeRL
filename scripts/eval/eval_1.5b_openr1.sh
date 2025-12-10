@@ -14,6 +14,7 @@ export PYTHONPATH="${PROJECT_DIR}"
 export HF_ENDPOINT="https://hf-mirror.com"
 export LD_LIBRARY_PATH="/root/miniconda3/envs/perl/lib:/usr/local/nvidia/lib64:$LD_LIBRARY_PATH"
 # export VLLM_LOGGING_LEVEL="DEBUG"
+export VLLM_TORCH_COMPILE="0"
 
 TEMPERATURE="0.7"
 TOP_P="0.9"
@@ -22,7 +23,7 @@ MAX_NEW_TOKENS="31744"
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 DP_SIZE=8
 TP_SIZE=1
-MAX_NUM_REQUEST=2000
+MAX_NUM_REQUEST=1600
 GPU_MEMORY_UTILIZATION=0.95
 
 function kill_vllm_processes() {
@@ -62,24 +63,6 @@ function eval_model_with_adapter() {
     --dtype "bfloat16" 2>&1 | tee "eval.log";
 }
 
-set +e
-
-eval_model_with_adapter \
-  "${PROJECT_DIR}/outputs/eval/openr1-deepseek-r1-1.5b" \
-  "${BASE_MODEL_PATH}" \
-  ""
-
-eval_model_with_adapter \
-   "${PROJECT_DIR}/outputs/eval/openr1-test-perl-20251208" \
-   "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/ckpts/perl"
-
-eval_model_with_adapter \
-  "${PROJECT_DIR}/outputs/eval/openr1-test-full-20251208" \
-  "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
-  ""
-
-
 function eval_model_with_adapter_from_hf() {
   mkdir -p "${PROJECT_DIR}/ckpts/$1/$2";
 
@@ -96,11 +79,27 @@ function eval_model_with_adapter_from_hf() {
       "${PROJECT_DIR}/ckpts/$1/$2";
 }
 
-eval_model_with_adapter_from_hf "dapo_dora_qwen2_5_1_5b_20251126_115730"      "checkpoint-1024"
+set +e
 eval_model_with_adapter_from_hf "dapo_ia3_qwen2_5_1_5b_20251128_120647"       "checkpoint-1024"
-eval_model_with_adapter_from_hf "dapo_layernorm_qwen2_5_1_5b_20251127_195534" "checkpoint-1024"
 eval_model_with_adapter_from_hf "dapo_lora_qwen_1_5b"                         "checkpoint-1024"
-eval_model_with_adapter_from_hf "dapo_milora_qwen2_5_1_5b_20251126_224006"    "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_dora_qwen2_5_1_5b_20251126_115730"      "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_layernorm_qwen2_5_1_5b_20251127_195534" "checkpoint-1024"
 eval_model_with_adapter_from_hf "dapo_miss_qwen2_5_1_5b_20251124_220354"      "checkpoint-1024"
-eval_model_with_adapter_from_hf "dapo_pissa_qwen2_5_1_5b_20251126_192154"     "checkpoint-1024"
 eval_model_with_adapter_from_hf "dapo_vera_qwen2_5_1_5b_20251126_190555"      "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_milora_qwen2_5_1_5b_20251126_224006"    "checkpoint-1024"
+eval_model_with_adapter_from_hf "dapo_pissa_qwen2_5_1_5b_20251126_192154"     "checkpoint-1024"
+
+eval_model_with_adapter \
+  "${PROJECT_DIR}/outputs/eval/openr1-deepseek-r1-1.5b" \
+  "${BASE_MODEL_PATH}" \
+  ""
+
+eval_model_with_adapter \
+   "${PROJECT_DIR}/outputs/eval/openr1-test-perl-20251208" \
+   "${BASE_MODEL_PATH}" \
+   "${PROJECT_DIR}/ckpts/perl"
+
+eval_model_with_adapter \
+  "${PROJECT_DIR}/outputs/eval/openr1-test-full-20251208" \
+  "${PROJECT_DIR}/ckpts/grpo_full_qwen2_5_3b_20251121_111716/checkpoint-1024" \
+  ""
