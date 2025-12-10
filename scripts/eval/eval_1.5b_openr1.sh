@@ -20,18 +20,16 @@ TEMPERATURE="0.7"
 TOP_P="0.9"
 MAX_NEW_TOKENS="31744"
 # MAX_NEW_TOKENS="65536"
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+# CUDA_VISIBLE_DEVICES=0,1,2,3
 DP_SIZE=8
 TP_SIZE=1
-MAX_NUM_REQUEST=1600
+MAX_NUM_REQUEST="$((200 * ${DP_SIZE}))"
 GPU_MEMORY_UTILIZATION=0.95
 
 function kill_vllm_processes() {
-  pkill -9 python || true;
   pkill -9 -f "vllm.entrypoints.openai.api_server" || true;
   pkill -9 -f "VLLM::EngineCore" || true;
   sleep 1;
-  pkill -9 python || true;
   pkill -9 -f "vllm.entrypoints.openai.api_server" || true;
   pkill -9 -f "VLLM::EngineCore" || true;
 }
