@@ -9,5 +9,3 @@ transformers
 trl[vllm]
 peft
 wandb
-flash_attn
-flask
