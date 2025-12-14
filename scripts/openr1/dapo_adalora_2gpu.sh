@@ -5,7 +5,7 @@ LOG_FILE=${OUTPUT_DIR}/output.log
 
 mkdir -p ${OUTPUT_DIR}
 
-CUDA_VISIBLE_DEVICES=0,3 ACCELERATE_LOG_LEVEL=info \
+CUDA_VISIBLE_DEVICES=1,2 ACCELERATE_LOG_LEVEL=info \
     accelerate launch \
     --main_process_port 29503 \
     --config_file scripts/accelerate/ds_zero2_2gpu.yaml \

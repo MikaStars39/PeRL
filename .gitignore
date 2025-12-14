@@ -1,7 +1,7 @@
 ckpts/
 results/
 outputs/
-
+.verl
 # Byte-compiled / optimized / DLL files
 .DS_Store
 completion_samples/*
