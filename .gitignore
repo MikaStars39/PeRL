@@ -1,14 +1,15 @@
 ckpts/
 results/
 outputs/
-.verl
 # Byte-compiled / optimized / DLL files
 .DS_Store
 completion_samples/*
 __pycache__/
 *.py[cod]
 *$py.class
-
+ckpts
+.verl
+logs
 # C extensions
 *.so
 .litellm_cache/

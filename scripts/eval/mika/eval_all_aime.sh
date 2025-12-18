@@ -10,6 +10,7 @@ DATASET="aime2024@32"
 
 export PYTHONPATH="${PROJECT_DIR}"
 export HF_ENDPOINT="https://hf-mirror.com"
+unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY  # 取消代理
 export VLLM_TORCH_COMPILE="0"
 
 TEMPERATURE="0.7"
@@ -60,20 +61,28 @@ function eval_model_with_adapter() {
 function eval_model_with_adapter_from_hf() {
   local MODEL_NAME="$1"
   local CKPT_NUM="$2"
+  local HF_REPO="${3:-MikaStars39/PeRL}"
   local CHECKPOINT_NAME="checkpoint-${CKPT_NUM}"
   
   echo "=========================================="
   echo "Evaluating model: ${MODEL_NAME}, checkpoint: ${CHECKPOINT_NAME}"
+  echo "From repository: ${HF_REPO}"
   echo "=========================================="
   
   mkdir -p "${PROJECT_DIR}/ckpts/${MODEL_NAME}/${CHECKPOINT_NAME}";
 
-  hf download MikaStars39/PeRL \
+  hf download "${HF_REPO}" \
       --repo-type model \
       --local-dir "${PROJECT_DIR}/ckpts/" \
-      --include "${MODEL_NAME}/${CHECKPOINT_NAME}/*";
+      --include "${MODEL_NAME}/${CHECKPOINT_NAME}/*" || true;
 
   ls -a "${PROJECT_DIR}/ckpts/${MODEL_NAME}/${CHECKPOINT_NAME}";
+
+  # 检查下载是否成功
+  if [[ ! -f "${PROJECT_DIR}/ckpts/${MODEL_NAME}/${CHECKPOINT_NAME}/adapter_config.json" ]]; then
+    echo "WARNING: Download failed or checkpoint not found, skipping ${MODEL_NAME}/${CHECKPOINT_NAME}"
+    return 0
+  fi
 
   eval_model_with_adapter \
       "${PROJECT_DIR}/outputs/eval/aime-${MODEL_NAME}___${CHECKPOINT_NAME}" \
@@ -83,22 +92,38 @@ function eval_model_with_adapter_from_hf() {
 
 set +e
 
+# 格式: "MODEL_NAME:HF_REPO" 或 "MODEL_NAME" (默认使用 MikaStars39/PeRL)
 MODELS=(
-  "grpo_adalora_qwen2_5_1_5b_20251212_181345"
-
+  # MikaStars39/PeRL
+  "dapo_miss_qwen2_5_1_5b_20251124_220354"
+  "dapo_pissa_qwen2_5_1_5b_20251126_192154"
+  "dapo_vera_qwen2_5_1_5b_20251126_190555"
+  # 5456es/perl_results
+  "dapo_lora_plus_20251204_160304:5456es/perl_results"
+  "dapo_lora_fa_20251204_152725:5456es/perl_results"
 )
 
 # 定义要评估的 checkpoint 列表
-CHECKPOINTS=(64 128 256 512 1024)
+CHECKPOINTS=(64 128 192 256 320 384 448 512 576 640 704 768 832 896 960 1024)
 
 # 遍历所有模型和 checkpoint 组合
-for MODEL_NAME in "${MODELS[@]}"; do
+for MODEL_ENTRY in "${MODELS[@]}"; do
+  # 解析模型名和仓库名
+  if [[ "${MODEL_ENTRY}" == *":"* ]]; then
+    MODEL_NAME="${MODEL_ENTRY%%:*}"
+    HF_REPO="${MODEL_ENTRY#*:}"
+  else
+    MODEL_NAME="${MODEL_ENTRY}"
+    HF_REPO="MikaStars39/PeRL"
+  fi
+
   echo "=========================================="
   echo "Starting evaluation for model: ${MODEL_NAME}"
+  echo "From repository: ${HF_REPO}"
   echo "=========================================="
   
   for CKPT_NUM in "${CHECKPOINTS[@]}"; do
-    eval_model_with_adapter_from_hf "${MODEL_NAME}" "${CKPT_NUM}"
+    eval_model_with_adapter_from_hf "${MODEL_NAME}" "${CKPT_NUM}" "${HF_REPO}"
   done
   
   # 评估完该模型的所有checkpoint后，删除下载的模型文件（保留评估结果）
@@ -108,4 +133,8 @@ for MODEL_NAME in "${MODELS[@]}"; do
   rm -rf "${PROJECT_DIR}/ckpts/${MODEL_NAME}"
   echo "Deleted ${PROJECT_DIR}/ckpts/${MODEL_NAME}"
 done
+
+echo "=========================================="
+echo "All evaluations completed!"
+echo "=========================================="
 
