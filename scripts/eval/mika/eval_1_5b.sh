@@ -61,31 +61,6 @@ function eval_model_with_adapter() {
 set +e
 
 eval_model_with_adapter \
-   "${PROJECT_DIR}/outputs/dapo_rslora_qwen2_5_1_5b_20251223_142342-eval" \
+   "${PROJECT_DIR}/outputs/batchsize_32-eval" \
    "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/outputs/dapo_rslora_qwen2_5_1_5b_20251223_142342/checkpoint-1024"
-  
-eval_model_with_adapter \
-   "${PROJECT_DIR}/outputs/dapo_lora_lr5_20251129_222821-eval" \
-   "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/ckpts/dapo_lora_lr5_20251129_222821/checkpoint-1024"
-
-eval_model_with_adapter \
-   "${PROJECT_DIR}/outputs/dapo_lora_r8_20251129_135342-eval" \
-   "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/ckpts/dapo_lora_r8_20251129_135342/checkpoint-1024"
-
-eval_model_with_adapter \
-   "${PROJECT_DIR}/outputs/dapo_lora_r16_qwen2_5_3b_20251124_104900-eval" \
-   "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/ckpts/dapo_lora_r16_qwen2_5_3b_20251124_104900/checkpoint-1024"
-
-eval_model_with_adapter \
-   "${PROJECT_DIR}/outputs/dr_grpo_lora_20251129_132413-eval" \aaa
-   "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/ckpts/dr_grpo_lora_20251129_132413/checkpoint-1024"
-
-eval_model_with_adapter \
-   "${PROJECT_DIR}/outputs/grpo_lora_20251130_192918-eval" \
-   "${BASE_MODEL_PATH}" \
-   "${PROJECT_DIR}/ckpts/dr_grpo_lora_20251130_192918/checkpoint-1024"
+   "${PROJECT_DIR}/outputs/batchsize_32"

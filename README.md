@@ -1,69 +1,41 @@
-# PERL: Parameter-Efficient Reinforcement Learning  
-> A minimal, modular, and lightning-fast framework for fine-tuning language models with PEFT + RL.
+<div align="center">
 
----
+# PERL: Parameter-Efficient Reinforcement Learning  
+> A minimal, modular, and lightning-fast framework for PEFT + RL.
+</div>
 
 ## 🧩 Supported Parameter-Efficient Methods
 
-| Method        | Status | Notes |
-|---------------|--------|-------|
-| LoRA          | ✅     | Fully tested |
-| DoRA          | ✅     | Weight-decomposed LoRA |
-| MiSS          | ✅     | Mixture of Sub-Spaces |
-| VeRA          | ✅     | Vector-based Random Adaptation |
-| PiSSA         | ✅     | Principal Singular values & Singular vectors Adaptation |
-| AdaLoRA       | ❌     | Rank allocation unstable under RL |
-| X-LoRA        | 🔄     | Cross-layer routing |
-| QLoRA         | 🔄     | Kronecker-product adaptation |
-| MiLoRA        | 🔄     | Kronecker-product adaptation |
+| Method | Status | Description |
+| :--- | :--- | :--- |
+| **LoRA** | ✅ | Standard Low-Rank Adaptation |
+| **DoRA** | ✅ | Weight-decomposed Low-Rank Adaptation |
+| **MiSS** | ✅ | Mixture of Sub-Spaces (Efficient shard-sharing structure) |
+| **AdaLoRA** | ✅ | Adaptive budget allocation for rank-adaptive matrices |
+| **LoRA+** | ✅ | Differentiated learning rates for improved adaptation dynamics |
+| **rsLORA** | ✅ | Rank stabilization scaling factors |
+| **PiSSA** | ✅ | Principal Singular values & Singular vectors Adaptation |
+| **MiLORA** | ✅ | Minor Singular components initialization |
+| **LORA-FA** | ✅ | Memory-efficient adaptation with frozen projection matrix A |
+| **VeRA** | ✅ | Vector-based Random Matrix Adaptation |
+| **LN Tuning** | ✅ | Parameter-efficient tuning on Layer Normalization layers |
+| **$IA^3$** | ✅ | Infused Adapter by Inhibiting and Amplifying Inner Activations |
 
-
-> Full list & references: [Awesome-LoRA](https://github.com/Yuheng2000/Awesome-LoRA)
-
----
-
-## ⚙️ Environment Setup
+## Environment Setup
 
 ```
-pip install -r requirements.txt
-pip install vllm --no-build-isolation # vllm for trl rollout
+uv pip install -r requirements.txt
 ```
-
-### Flash Attention
 
 ```
 uv pip install flash-attn --no-cache-dir --no-build-isolation
 python -c "import flash_attn" # verify
 ```
 
-### Liger-Kernel for faster training
+## Training
 
 ```
-pip install liger-kernel --no-build-isolation
-```
-
-## Benchmark
-
-Math: aime24, aime25, math500, GPQA diamond, amc23
-
-Code: 
-
-
-|  Task  |Version|  Metric  |Value |   |Stderr|
-|--------|-------|----------|-----:|---|-----:|
-|aime24:0|       |pass@k:k=1|0.3667|±  |0.0895|
-|        |       |avg@n:n=1 |0.3667|±  |0.0895|
-|all     |       |pass@k:k=1|0.3667|±  |0.0895|
-|        |       |avg@n:n=1 |0.3667|±  |0.0895|
-
-|  Task  |Version|  Metric  |Value |   |Stderr|
-|--------|-------|----------|-----:|---|-----:|
-|aime24:0|       |pass@k:k=1|0.4667|±  |0.0926|
-|        |       |avg@n:n=1 |0.4667|±  |0.0926|
-|all     |       |pass@k:k=1|0.4667|±  |0.0926|
-|        |       |avg@n:n=1 |0.4667|±  |0.0926|
-
-##
-```
-python scripts/eval/view_eval.py outputs/dapo_lora_plus_20251204_160304
+source [your virtual env]/bin/activate
+bash scripts/openr1/dapo_full.sh # run a full RL
+bash scripts/openr1/dapo_lora.sh # run a lora RL
 ```
