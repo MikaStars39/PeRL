@@ -14,7 +14,7 @@
 > [!IMPORTANT]
 > This repo is based on [TRL](https://github.com/huggingface/trl) and we are actively developing on [verl](https://github.com/volcengine/verl) / [slime](https://github.com/THUDM/slime).
 > 
-> We thanks for the contribution of [Tina](https://github.com/shangshang-wang/Tina) where our project was forked from its repo and we used part of its hyperparameter settings.
+> We thank for the contribution of [Tina](https://github.com/shangshang-wang/Tina) where our project was forked from its repo and we used part of its hyperparameter settings.
 >
 > We also utilize verifier functions, evaluation, and data from [openr1](https://github.com/huggingface/open-r1) and [JustRL](https://github.com/thunlp/JustRL).
 
