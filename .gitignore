@@ -13,7 +13,7 @@ logs
 
 debug.json
 data/*
-
+*.out
 # C extensions
 *.so
 .litellm_cache/

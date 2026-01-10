@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export MASTER_REAL_IP="11.251.91.93"
+export MASTER_REAL_IP="11.249.248.180"
 
 # 检查环境变量
 if [ -z "$MASTER_REAL_IP" ]; then
