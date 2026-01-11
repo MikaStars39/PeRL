@@ -1,0 +1,51 @@
+apiVersion: apps.chatrhino.cn/v1alpha1
+kind: TrainingJob
+metadata:
+  name: slime-1node-debug # <--- 1. 改个新名字
+  namespace: explore-train
+spec:
+  replicas: 1
+  backoffLimit: 0
+  sshPort: 22
+  jobSpec:
+    template:
+      spec:
+        tolerations:
+          - key: "dedicated"
+            operator: "Equal"
+            value: "explore-train"
+            effect: "NoSchedule"
+        imagePullSecrets:
+          - name: inner
+        nodeSelector:
+          jdea.com/gpu-model: h200
+          jdea.com/group-name: explore-train
+        containers:
+          - name: training-container
+            image: jdea-registry.jd.com/qingyu/slime:latest
+            command: ["sleep", "infinity"] # <--- 保持挂起，方便我们手动进场
+            volumeMounts:
+              - mountPath: /mnt/llm-train 
+                name: data
+              - mountPath: /dev/shm       
+                name: cache-volume
+            resources:
+              limits:
+                cpu: "172"
+                mellanox/rdma: "8" # 确保保留 RDMA，多机训练必须
+                memory: 1813Gi
+                nvidia.com/gpu: "8"
+              requests:
+                cpu: "172"
+                mellanox/rdma: "8"
+                memory: 1813Gi
+                nvidia.com/gpu: "8"
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: trainpvc 
+              readOnly: false
+          - emptyDir:
+              medium: Memory
+              sizeLimit: 128Gi 
+            name: cache-volume
