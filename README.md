@@ -1,5 +1,5 @@
 <div align="center">
-<img src="https://pbs.twimg.com/media/G9uYc9HasAAWCm5?format=jpg&name=medium" alt="logo" width="600" margin="10px"></img>
+<img src="assets/topfig.png" alt="logo" width="600" margin="10px"></img>
   
 # PeRL: Parameter-Efficient Reinforcement Learning  
 > A minimal, modular, and lightning-fast framework for PEFT + RL.
@@ -12,16 +12,19 @@
 </div>
 
 > [!IMPORTANT]
-> This repo is based on [TRL](https://github.com/huggingface/trl) and we are actively developing on [verl](https://github.com/volcengine/verl) / [slime](https://github.com/THUDM/slime).
-> 
-> We thank for the contribution of [Tina](https://github.com/shangshang-wang/Tina) where our project was forked from its repo and we used part of its hyperparameter settings.
 >
-> We also utilize verifier functions, evaluation, and data from [openr1](https://github.com/huggingface/open-r1) and [JustRL](https://github.com/thunlp/JustRL).
-
+> PeRL is currently based on [TRL](https://github.com/huggingface/trl)
+>
+> We are actively developing on [verl](https://github.com/volcengine/verl) / [slime](https://github.com/THUDM/slime). Please refer to the modules.
+> 
+> Our evaluation is based on an in-house developed eval suit [MikaEval](https://github.com/MikaStars39/MikaEval).
+>
+> We thank for the contribution of [Tina](https://github.com/shangshang-wang/Tina) where our project was forked from its repo and we used part of its hyperparameter settings. We also utilize verifier functions, evaluation, and data from [openr1](https://github.com/huggingface/open-r1) and [JustRL](https://github.com/thunlp/JustRL).
 
 ## News
 
-- [2025/12] We released our code, paper, and checkpoints!
+- [2026/01] 🔥 We are now adding support for [verl](https://github.com/volcengine/verl) and [slime](https://github.com/THUDM/slime)!
+- [2025/12] 🔥 We released our code, paper, and checkpoints!
 
 ## About
 
