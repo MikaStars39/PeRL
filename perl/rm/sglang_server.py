@@ -1,7 +1,8 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import sglang as sgl
+from transformers import AutoTokenizer
 
 logger = logging.getLogger("AllInOne-RM")
 
@@ -12,6 +13,7 @@ class SGLangManager:
     def __init__(self, config):
         self.config = config
         self.engine = None
+        self.tokenizer = None
 
     def start(self):
         """Start the SGLang offline engine."""
@@ -21,6 +23,9 @@ class SGLangManager:
             tp_size=self.config.sglang_tp_size,
             dp_size=self.config.sglang_dp_size,
             trust_remote_code=self.config.sglang_trust_remote_code,
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.config.model_path, trust_remote_code=self.config.sglang_trust_remote_code
         )
 
     async def wait_until_ready(self):
@@ -44,3 +49,29 @@ class SGLangManager:
         params = sampling_params or {"temperature": 0.0, "top_p": 1.0, "max_new_tokens": 128}
         outputs = self.engine.generate([prompt], params)
         return outputs[0].get("text", "").strip()
+
+    async def async_generate(self, prompt: str, sampling_params: Optional[Dict[str, Any]] = None) -> str:
+        """Run a single-prompt async generation on the offline engine."""
+        if not self.engine:
+            raise RuntimeError("SGLang engine is not initialized.")
+        params = sampling_params or {"temperature": 0.0, "top_p": 1.0, "max_new_tokens": 128}
+        outputs = await self.engine.async_generate([prompt], params)
+        return outputs[0].get("text", "").strip()
+
+    def _apply_chat_template(self, messages: List[Dict[str, str]]) -> str:
+        if not self.tokenizer:
+            raise RuntimeError("Tokenizer is not initialized.")
+        try:
+            return self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        except Exception as e:
+            logger.info(f"[template] apply_chat_template failed; fallback to raw prompt. Error: {e}")
+            return messages[-1]["content"]
+
+    async def async_generate_chat(
+        self, messages: List[Dict[str, str]], sampling_params: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Run async generation with chat template applied."""
+        prompt = self._apply_chat_template(messages)
+        return await self.async_generate(prompt, sampling_params)
