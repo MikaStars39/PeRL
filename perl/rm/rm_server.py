@@ -2,46 +2,32 @@ import argparse
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
-from contextlib import asynccontextmanager
 
 import anyio
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from .config import RMConfig
 from .math_verifier import extract_boxed_answer, compute_score
 from .sglang_server import SGLangManager
-from .config import RMConfig
 
-logger = logging.getLogger("AllInOne-RM")
-
-CONFIG = RMConfig()
-sglang_manager = SGLangManager(CONFIG)
-OUTPUT_DIR: Path | None = None
-
-# Concurrency limiter to prevent overwhelming SGLang.
-MAX_CONCURRENT_REQUESTS = 16
-sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-
-# Timeout for each extraction call (seconds).
-EXTRACTION_TIMEOUT = 30
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
+logger = logging.getLogger("RM")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: boot SGLang engine.
-    sglang_manager.start()
-    await sglang_manager.wait_until_ready()
-    yield
-    # Shutdown: terminate SGLang engine.
-    sglang_manager.stop()
+# ------------ Global State ------------
+
+config: RMConfig = None
+engine: SGLangManager = None
+semaphore: asyncio.Semaphore = None
 
 
-app = FastAPI(title="All-in-One RM Server", lifespan=lifespan)
-
+# ------------ Request Schema ------------
 
 class RewardRequest(BaseModel):
     prompt: str
@@ -50,144 +36,177 @@ class RewardRequest(BaseModel):
     metadata: dict | None = None
 
 
-async def call_qwen_extractor(text: str) -> str:
-    """Call the offline engine for answer extraction."""
-    extraction_prompt = (
-        "You are a math answer extractor. Extract the final answer. "
-        "Output ONLY the answer itself (number/expression). "
-        "If possible, use \\boxed{...}. Do NOT output any explanation.\n"
-        "中文提示：只输出答案本身，不要输出多余文字。\n\n"
-        f"Text:\n{text}"
-    )
-    messages = [{"role": "user", "content": extraction_prompt}]
-    return await sglang_manager.async_generate_chat(messages)
+# ------------ Answer Extraction ------------
+
+EXTRACTION_PROMPT = """Reference Format (Ground Truth): {label}
+
+Model Reasoning Process:
+{response}
+
+Task: Extract the final answer from the reasoning process above.
+Instructions:
+1. Follow the style/format of the Reference Format.
+2. DO NOT correct any mistakes. Extract what the model actually concluded, even if wrong.
+3. DO NOT simplify the answer. If the model concludes with an equation (e.g., 'x = 0'), extract the FULL equation: \\boxed{{x = 0}}, NOT just \\boxed{{0}}.
+4. You can do short analysis. Your final response must end with \\boxed{{answer}} format."""
 
 
-async def clean_extracted_answer(text: str) -> str:
-    """Ask the engine to normalize an extracted answer to a bare value."""
-    cleanup_prompt = (
-        "Normalize the following to ONLY the final answer. "
-        "Output just the answer (number/expression), no extra words.\n"
-        "中文提示：只输出答案本身。\n\n"
-        f"Text:\n{text}"
-    )
-    messages = [{"role": "user", "content": cleanup_prompt}]
-    return await sglang_manager.async_generate_chat(messages)
+async def extract_answer(response: str, label: str) -> str | None:
+    """Extract answer from model response using LLM."""
+    prompt = EXTRACTION_PROMPT.format(response=response, label=label)
+    result = await engine.chat([{"role": "user", "content": prompt}])
+    return extract_boxed_answer(result) if result else None
 
 
-async def async_save_log(
-    req: RewardRequest,
-    final_ans: str | None,
-    score: float,
-    rm_type: str,
-    metadata: dict,
-):
-    """Persist request/response log asynchronously to avoid blocking event loop."""
+# ------------ Reward Calculation ------------
+
+async def calculate_math_reward(response: str, label: str) -> tuple[float, str | None]:
+    """Calculate reward for math task. Returns (score, extracted_answer)."""
+    # Must contain exactly one </think> tag
+    if "</think>" not in response or response.count("</think>") != 1:
+        return 0.0, None
+
+    # Extract content after </think>
+    answer_part = response.split("</think>")[1].strip()
+    if not answer_part:
+        return 0.0, None
+
+    # Extract and verify answer
+    with anyio.fail_after(config.timeout):
+        extracted = await extract_answer(answer_part, label)
+
+    if not extracted:
+        logger.warning("Failed to extract boxed answer")
+        return 0.0, None
+
+    score = compute_score(extracted, label)
+    return score, extracted
+
+
+# ------------ Logging ------------
+
+async def save_log(req: RewardRequest, extracted: str | None, score: float, rm_type: str):
+    """Async save request log to file."""
+    if not config.output_dir:
+        return
     try:
+        output_path = Path(config.output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        log_path = OUTPUT_DIR / f"{timestamp}_{uuid4().hex}.json"
+        log_file = output_path / f"{timestamp}_{uuid4().hex[:8]}.json"
+        
         payload = {
             "timestamp": timestamp,
             "rm_type": rm_type,
             "prompt": req.prompt,
             "response": req.response,
             "label": req.label,
-            "metadata": metadata,
-            "extracted": final_ans,
+            "metadata": req.metadata,
+            "extracted": extracted,
             "score": score,
         }
         content = json.dumps(payload, ensure_ascii=False)
-        await anyio.to_thread.run_sync(log_path.write_text, content, "utf-8")
+        await anyio.to_thread.run_sync(log_file.write_text, content, "utf-8")
     except Exception as e:
         logger.error(f"Failed to save log: {e}")
 
 
+# ------------ FastAPI App ------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage SGLang engine lifecycle."""
+    engine.start()
+    await engine.wait_until_ready()
+    yield
+    engine.stop()
+
+
+app = FastAPI(title="RM Server", lifespan=lifespan)
+
+
 @app.post("/reward")
-async def calculate_reward(req: RewardRequest):
-    async with sem:  # Limit concurrent requests.
+async def reward_endpoint(req: RewardRequest):
+    """Calculate reward for a given response."""
+    async with semaphore:
         try:
             metadata = req.metadata or {}
             rm_type = metadata.get("rm_type", "math")
-            final_ans = None
-            score = 0.0
+            score, extracted = 0.0, None
 
             if rm_type == "math":
-                # Validate response format: must contain exactly one </think>.
-                if not ("</think>" in req.response and req.response.count("</think>") == 1):
-                    return 0.0
-
-                response_after_think = req.response.split("</think>")[1].strip()
-
-                # Wrap extraction calls with timeout protection.
-                with anyio.fail_after(EXTRACTION_TIMEOUT):
-                    qwen_res = await call_qwen_extractor(response_after_think)
-                    if qwen_res:
-                        if "\\boxed" in qwen_res:
-                            final_ans = extract_boxed_answer(qwen_res)
-                        else:
-                            cleaned = await clean_extracted_answer(qwen_res)
-                            final_ans = cleaned.strip() if cleaned else None
-
-                score = compute_score(final_ans, req.label) if final_ans else 0.0
-
+                score, extracted = await calculate_math_reward(req.response, req.label)
             else:
-                logger.error(f"Unsupported RM type: {rm_type}")
+                logger.error(f"Unsupported rm_type: {rm_type}")
 
-            # Lightweight console logging.
-            label_preview = req.label[:20] if req.label else ""
-            logger.info(f"GT: {label_preview}... | Extracted: {final_ans} | Score: {score}")
-
-            # Fire-and-forget async log persistence.
-            if OUTPUT_DIR is not None:
-                asyncio.create_task(async_save_log(req, final_ans, score, rm_type, metadata))
+            # Log
+            preview = req.label[:20] if req.label else ""
+            logger.info(f"GT: {preview}... | Extracted: {extracted} | Score: {score}")
+            asyncio.create_task(save_log(req, extracted, score, rm_type))
 
             return score
 
         except TimeoutError:
-            logger.error("Reward calculation timed out!")
+            logger.error("Request timed out")
             return 0.0
         except Exception as e:
-            logger.error(f"Reward Server Error: {e}")
+            logger.error(f"Error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")
 def health():
-    return {"status": "running"}
+    return {"status": "ok"}
+
+
+# ------------ CLI Entry ------------
+
+def parse_args() -> RMConfig:
+    """Parse CLI args and return config."""
+    parser = argparse.ArgumentParser(description="RM Server")
+    parser.add_argument("--model-path", default=RMConfig.model_path)
+    parser.add_argument("--tp-size", type=int, default=RMConfig.tp_size)
+    parser.add_argument("--dp-size", type=int, default=RMConfig.dp_size)
+    parser.add_argument("--temperature", type=float, default=RMConfig.temperature)
+    parser.add_argument("--top-p", type=float, default=RMConfig.top_p)
+    parser.add_argument("--max-new-tokens", type=int, default=RMConfig.max_new_tokens)
+    parser.add_argument("--host", default=RMConfig.host)
+    parser.add_argument("--port", type=int, default=RMConfig.port)
+    parser.add_argument("--max-concurrent", type=int, default=RMConfig.max_concurrent)
+    parser.add_argument("--timeout", type=int, default=RMConfig.timeout)
+    parser.add_argument("--output-dir", default=RMConfig.output_dir)
+    args = parser.parse_args()
+
+    return RMConfig(
+        model_path=args.model_path,
+        tp_size=args.tp_size,
+        dp_size=args.dp_size,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        max_new_tokens=args.max_new_tokens,
+        host=args.host,
+        port=args.port,
+        max_concurrent=args.max_concurrent,
+        timeout=args.timeout,
+        output_dir=args.output_dir,
+    )
 
 
 def run_rm_server():
-    parser = argparse.ArgumentParser(description="All-in-One RM Server")
-    parser.add_argument("--model-path", default=RMConfig.model_path)
-    parser.add_argument("--tp-size", type=int, default=RMConfig.sglang_tp_size)
-    parser.add_argument("--dp-size", type=int, default=RMConfig.sglang_dp_size)
-    parser.add_argument("--rm-server-port", type=int, default=RMConfig.rm_server_port)
-    parser.add_argument("--rm-host", default="0.0.0.0")
-    parser.add_argument("--output-dir", default="rm_logs")
-    parser.add_argument("--max-concurrent", type=int, default=16, help="Max concurrent extraction requests")
-    parser.add_argument("--timeout", type=int, default=30, help="Timeout per extraction call (seconds)")
-    args = parser.parse_args()
+    """Main entry point."""
+    global config, engine, semaphore
 
-    # Initialize globals.
-    global CONFIG, sglang_manager, OUTPUT_DIR, sem, MAX_CONCURRENT_REQUESTS, EXTRACTION_TIMEOUT
-    CONFIG = RMConfig(
-        model_path=args.model_path,
-        sglang_tp_size=args.tp_size,
-        sglang_dp_size=args.dp_size,
-        rm_server_port=args.rm_server_port,
-    )
-    sglang_manager = SGLangManager(CONFIG)
-    OUTPUT_DIR = Path(args.output_dir)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    MAX_CONCURRENT_REQUESTS = args.max_concurrent
-    sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-    EXTRACTION_TIMEOUT = args.timeout
+    config = parse_args()
+    engine = SGLangManager(config)
+    semaphore = asyncio.Semaphore(config.max_concurrent)
 
-    print("🔥 Starting All-in-One RM service...")
-    print(f"👉 HTTP port: {CONFIG.rm_server_port}")
-    print(f"👉 Max concurrent: {MAX_CONCURRENT_REQUESTS}, Timeout: {EXTRACTION_TIMEOUT}s")
+    print(f"🔥 Starting RM Server on {config.host}:{config.port}")
+    print(f"   Model: {config.model_path}")
+    print(f"   TP={config.tp_size}, DP={config.dp_size}")
+    print(f"   MaxConcurrent={config.max_concurrent}, Timeout={config.timeout}s")
 
-    uvicorn.run(app, host=args.rm_host, port=CONFIG.rm_server_port)
+    uvicorn.run(app, host=config.host, port=config.port)
 
 
 if __name__ == "__main__":

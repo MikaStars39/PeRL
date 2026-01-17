@@ -4,74 +4,83 @@ from typing import Any, Dict, List, Optional
 import sglang as sgl
 from transformers import AutoTokenizer
 
-logger = logging.getLogger("AllInOne-RM")
+from .config import RMConfig
 
+logger = logging.getLogger("RM")
+
+
+# ------------ SGLang Offline Engine Manager ------------
 
 class SGLangManager:
-    """Lifecycle manager for the SGLang offline engine."""
+    """Manages SGLang offline engine lifecycle and generation."""
 
-    def __init__(self, config):
+    def __init__(self, config: RMConfig):
         self.config = config
-        self.engine = None
+        self.engine: Optional[sgl.Engine] = None
         self.tokenizer = None
 
+    # ------------ Lifecycle ------------
+
     def start(self):
-        """Start the SGLang offline engine."""
-        logger.info(f"🚀 Starting SGLang offline engine (Model: {self.config.model_path})...")
+        """Initialize SGLang engine and tokenizer."""
+        logger.info(f"Starting SGLang engine: {self.config.model_path}")
         self.engine = sgl.Engine(
             model_path=self.config.model_path,
-            tp_size=self.config.sglang_tp_size,
-            dp_size=self.config.sglang_dp_size,
-            trust_remote_code=self.config.sglang_trust_remote_code,
+            tp_size=self.config.tp_size,
+            dp_size=self.config.dp_size,
+            trust_remote_code=self.config.trust_remote_code,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_path, trust_remote_code=self.config.sglang_trust_remote_code
+            self.config.model_path,
+            trust_remote_code=self.config.trust_remote_code,
         )
 
-    async def wait_until_ready(self):
-        """No-op for offline engine (kept for lifecycle compatibility)."""
-        return
-
     def stop(self):
-        """Shutdown the SGLang offline engine."""
+        """Shutdown SGLang engine."""
         if self.engine:
-            logger.info("🛑 Shutting down SGLang offline engine...")
+            logger.info("Stopping SGLang engine...")
             try:
                 self.engine.shutdown()
             except Exception as e:
-                logger.warning(f"Shutdown issue (may already be closed): {e}")
-            logger.info("👋 SGLang offline engine stopped.")
+                logger.warning(f"Shutdown warning: {e}")
 
-    def generate(self, prompt: str, sampling_params: Optional[Dict[str, Any]] = None) -> str:
-        """Run a single-prompt generation on the offline engine."""
-        if not self.engine:
-            raise RuntimeError("SGLang engine is not initialized.")
-        params = sampling_params or {"temperature": 0.0, "top_p": 1.0, "max_new_tokens": 128}
-        outputs = self.engine.generate([prompt], params)
-        return outputs[0].get("text", "").strip()
+    async def wait_until_ready(self):
+        """No-op for offline engine (kept for interface consistency)."""
+        pass
 
-    async def async_generate(self, prompt: str, sampling_params: Optional[Dict[str, Any]] = None) -> str:
-        """Run a single-prompt async generation on the offline engine."""
+    # ------------ Generation ------------
+
+    async def generate(
+        self,
+        prompt: str,
+        sampling_params: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Async generate from raw prompt."""
         if not self.engine:
-            raise RuntimeError("SGLang engine is not initialized.")
-        params = sampling_params or {"temperature": 0.0, "top_p": 1.0, "max_new_tokens": 128}
+            raise RuntimeError("Engine not initialized")
+        params = sampling_params or self.config.sampling_params
         outputs = await self.engine.async_generate([prompt], params)
         return outputs[0].get("text", "").strip()
 
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        sampling_params: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Async generate with chat template applied."""
+        prompt = self._apply_chat_template(messages)
+        return await self.generate(prompt, sampling_params)
+
+    # ------------ Internal ------------
+
     def _apply_chat_template(self, messages: List[Dict[str, str]]) -> str:
+        """Apply tokenizer chat template to messages."""
         if not self.tokenizer:
-            raise RuntimeError("Tokenizer is not initialized.")
+            raise RuntimeError("Tokenizer not initialized")
         try:
             return self.tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
-        except Exception as e:
-            logger.info(f"[template] apply_chat_template failed; fallback to raw prompt. Error: {e}")
+        except Exception:
+            # Fallback: return last message content
             return messages[-1]["content"]
-
-    async def async_generate_chat(
-        self, messages: List[Dict[str, str]], sampling_params: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Run async generation with chat template applied."""
-        prompt = self._apply_chat_template(messages)
-        return await self.async_generate(prompt, sampling_params)
