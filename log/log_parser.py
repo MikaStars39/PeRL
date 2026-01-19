@@ -35,6 +35,9 @@ def parse_log_to_csv(folder_path):
                     # Safely evaluate the string dictionary to a Python dict
                     metrics = ast.literal_eval(dict_match.group(1))
 
+                    if not isinstance(metrics, dict):
+                        continue
+
                     # Initialize step entry if not exists
                     if step not in aggregated_data:
                         aggregated_data[step] = {'step': step}
@@ -64,3 +67,8 @@ if __name__ == "__main__":
     # Use the provided argument as path, otherwise use current directory
     target_folder = sys.argv[1] if len(sys.argv) > 1 else "."
     parse_log_to_csv(target_folder)
+
+"""
+python /mnt/llm-train/users/explore-train/qingyu/PeRL/log/log_parser.py
+
+"""
