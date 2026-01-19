@@ -24,8 +24,8 @@ def parse_log_to_csv(folder_path):
     
     with open(log_file, 'r', encoding='utf-8') as f:
         for line in f:
-            # Regex to find the step number (supports 'rollout 66' or 'step 66')
-            step_match = re.search(r"(?:rollout|step)\s+(\d+)", line)
+            # Regex to find the step number (supports 'rollout 66:' or 'step 66:')
+            step_match = re.search(r"(?:rollout|step)\s+(\d+):", line)
             # Regex to find the dictionary part of the log
             dict_match = re.search(r"(\{.*\})", line)
 
