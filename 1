@@ -1,0 +1,32 @@
+Traceback (most recent call last):
+  File "/mnt/llm-train/users/explore-train/qingyu/PeRL/recipe/areal/run_rl.py", line 66, in <module>
+    main(sys.argv[1:])
+  File "/mnt/llm-train/users/explore-train/qingyu/PeRL/recipe/areal/run_rl.py", line 38, in main
+    config, _ = load_expr_config(args, GRPOConfig)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/llm-train/users/explore-train/qingyu/PeRL/AReaL/areal/api/cli_args.py", line 2252, in load_expr_config
+    cfg, config_file = parse_cli_args(argv)
+                       ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/llm-train/users/explore-train/qingyu/PeRL/AReaL/areal/api/cli_args.py", line 2236, in parse_cli_args
+    cfg = hydra_compose(
+          ^^^^^^^^^^^^^^
+  File "/AReaL/.venv/lib/python3.12/site-packages/hydra/compose.py", line 38, in compose
+    cfg = gh.hydra.compose_config(
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/AReaL/.venv/lib/python3.12/site-packages/hydra/_internal/hydra.py", line 594, in compose_config
+    cfg = self.config_loader.load_configuration(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/AReaL/.venv/lib/python3.12/site-packages/hydra/_internal/config_loader_impl.py", line 142, in load_configuration
+    return self._load_configuration_impl(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/AReaL/.venv/lib/python3.12/site-packages/hydra/_internal/config_loader_impl.py", line 244, in _load_configuration_impl
+    parsed_overrides, caching_repo = self._parse_overrides_and_create_caching_repo(
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/AReaL/.venv/lib/python3.12/site-packages/hydra/_internal/config_loader_impl.py", line 228, in _parse_overrides_and_create_caching_repo
+    parsed_overrides = parser.parse_overrides(overrides=overrides)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/AReaL/.venv/lib/python3.12/site-packages/hydra/core/override_parser/overrides_parser.py", line 99, in parse_overrides
+    raise OverrideParseException(
+hydra.errors.OverrideParseException: LexerNoViableAltException: 2
+                           ^
+See https://hydra.cc/docs/1.2/advanced/override_grammar/basic for details

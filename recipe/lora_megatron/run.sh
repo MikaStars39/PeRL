@@ -7,6 +7,7 @@ set -ex
 # export SGLANG_LORA_ENABLE_FUSION=1
 
 export PYTHONBUFFERED=16
+export DEPRECATED_MEGATRON_COMPATIBLE=1
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1,2,3}
 NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
 NVLINK_COUNT=$(nvidia-smi | grep -o "NVLink" | wc -l)
@@ -18,9 +19,8 @@ fi
 echo "HAS_NVLINK: $HAS_NVLINK (detected $NVLINK_COUNT NVLink references)"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-source /mnt/llm-train/users/explore-train/qingyu/miles/scripts/models/qwen3-4B.sh
 
-PROJECT_DIR=/mnt/llm-train/users/explore-train/qingyu/miles
+PROJECT_DIR=/mnt/llm-train/users/explore-train/qingyu/PeRL/miles
 WANDB_HOST="http://11.71.1.218:8082"
 FIXED_PROJECT_NAME="qy-lora"
 SAVE_DIR=/mnt/llm-train/users/explore-train/qingyu/PeRL/outputs/Qwen3-4B-lora-ckpt
@@ -32,16 +32,21 @@ export WANDB_ENTITY=automl
 export WANDB_PROJECT=${FIXED_PROJECT_NAME} 
 export WANDB_NAME=${RUN_NAME}
 
+# Prefer the packaged Megatron-Bridge path first so `megatron.bridge`
+# does not accidentally resolve to an older checkout copy.
+RAY_RUNTIME_PYTHONPATH=${RAY_RUNTIME_PYTHONPATH:-/usr/local/lib/python3.12/dist-packages:/root/Megatron-LM/}
+
 wandb login --relogin --host=http://11.71.1.218:8082 ${WANDB_API_KEY}
 RUNTIME_ENV_JSON="{
   \"env_vars\": {
-    \"PYTHONPATH\": \"/root/Megatron-LM/\",
+    \"PYTHONPATH\": \"${RAY_RUNTIME_PYTHONPATH}\",
     \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\",
     \"NCCL_NVLS_ENABLE\": \"${HAS_NVLINK}\",
     \"RAY_ENABLE_OPENTELEMETRY\": \"0\",
     \"RAY_DISABLE_METRICS_COLLECTION\": \"1\",
     \"RAY_USAGE_STATS_DISABLED\": \"1\",
     \"GRPC_ENABLE_FORK_SUPPORT\": \"0\",
+    \"DEPRECATED_MEGATRON_COMPATIBLE\": \"1\",
     \"WANDB_MODE\": \"online\",
     \"WANDB_API_KEY\": \"${WANDB_API_KEY}\",
     \"WANDB_BASE_URL\": \"${WANDB_HOST}\",
@@ -51,6 +56,24 @@ RUNTIME_ENV_JSON="{
     \"WANDB_INIT_TIMEOUT\": \"300\"
   }
 }"
+
+MODEL_ARGS=(
+   --swiglu
+   --num-layers 36
+   --hidden-size 2560
+   --ffn-hidden-size 9728
+   --num-attention-heads 32
+   --group-query-attention
+   --num-query-groups 8
+   --use-rotary-position-embeddings
+   --disable-bias-linear
+   --normalization "RMSNorm"
+   --norm-epsilon 1e-6
+   --rotary-base "${MODEL_ARGS_ROTARY_BASE:-1000000}"
+   --vocab-size 151936
+   --kv-channels 128
+   --qk-layernorm
+)
 
 
 CKPT_ARGS=(
