@@ -4,3 +4,6 @@
 [submodule "modules/eval"]
 	path = modules/eval
 	url = https://github.com/MikaStars39/MikaEval
+[submodule "AReaL"]
+	path = AReaL
+	url = https://github.com/inclusionAI/AReaL.git
