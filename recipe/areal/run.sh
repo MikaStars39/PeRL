@@ -10,7 +10,7 @@ python3 recipe/areal/run_rl.py \
     scheduler.type=ray \
     experiment_name=lora_rl_qwen_distill \
     trial_name=${TIMESTAMP} \
-    allocation_mode=sglang:d24p1t1+archon:d4p1t2 \
+    allocation_mode=sglang:d24p1t1+archon:d2p1t4 \
     cluster.n_nodes=4 \
     cluster.n_gpus_per_node=8 \
     +actor.archon.enable_compile=false 2>&1 | tee $LOG_DIR
