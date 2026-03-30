@@ -1,9 +1,3 @@
-[submodule "modules/verl"]
-	path = modules/verl
-	url = https://github.com/volcengine/verl
-[submodule "modules/eval"]
-	path = modules/eval
-	url = https://github.com/MikaStars39/MikaEval
 [submodule "modules/slime"]
 	path = modules/slime
 	url = https://github.com/MikaStars39/slime.git
