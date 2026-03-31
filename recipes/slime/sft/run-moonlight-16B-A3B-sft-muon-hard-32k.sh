@@ -54,6 +54,7 @@ SFT_ARGS=(
    --num-epoch 5
    --rollout-batch-size 256
    --global-batch-size 256
+   --seq-length 32768
    --rollout-max-context-len 32000
 
    --loss-type sft_loss
