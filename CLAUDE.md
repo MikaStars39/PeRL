@@ -15,8 +15,8 @@ A minimal, modular framework for PEFT (Parameter-Efficient Fine-Tuning) + RL (Re
 PeRL/
 ├── modules/          # Core modules (contains submodules + local code)
 │   ├── trl/          # Local TRL-based training code (modules/trl/perl/)
-│   ├── slime/        # [submodule] SLIME training backend
-│   ├── Megatron-LM/  # [submodule] Megatron-LM (forked for PeRL)
+│   ├── slime/        # [submodule] SLIME training backend, forked from THUDM/slime
+│   ├── Megatron-LM/  # [submodule] Megatron-LM (an individual repo copied from docker image of slime)
 │   └── Emerging-Optimizers/  # [submodule] NVIDIA NeMo optimizers
 ├── recipes/          # Training scripts & configs
 │   ├── trl/          # TRL recipes (openr1/, openmath/, accelerate/, a6000/)
