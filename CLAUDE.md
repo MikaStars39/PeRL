@@ -1,3 +1,10 @@
+> ABOUT THE PROJECT
+> By default, the development i.e., this claude code is running on a cpu machine, while the coding is running on a gpu machine
+> Therefore, it is natural that you may not find some python packages or environment on your cli
+> Also do not run training that needs GPUs.
+> You can ask the user to run something on GPU machines.
+
+
 # PeRL - Parameter-Efficient Reinforcement Learning
 
 A minimal, modular framework for PEFT (Parameter-Efficient Fine-Tuning) + RL (Reinforcement Learning), and Optimizer design.
