@@ -83,7 +83,7 @@ PERF_ARGS=(
    --recompute-num-layers 1
 
    --use-dynamic-batch-size
-   --max-tokens-per-gpu 32000
+   --max-tokens-per-gpu 64000
 )
 
 OPTIMIZER_ARGS=(
@@ -119,11 +119,11 @@ MISC_ARGS=(
    # should be good for model performance
    --accumulate-allreduce-grads-in-fp32
    --attention-softmax-in-fp32
-   # MLA model, do not use flash attention backend
-   # --attention-backend flash
+    
+   --attention-backend flash
 
-   # TP*EP=1 时 flex dispatcher 不可用，使用 alltoall
-   --moe-token-dispatcher-type alltoall
+   --moe-enable-deepep                                          
+   --moe-token-dispatcher-type flex
 )
 
 # launch the master node of ray in container

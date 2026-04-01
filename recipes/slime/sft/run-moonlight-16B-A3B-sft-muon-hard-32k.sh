@@ -56,7 +56,7 @@ SFT_ARGS=(
    --global-batch-size 256
    --seq-length 32768
    --rollout-max-context-len 32000
-
+   --no-load-optim
    --loss-type sft_loss
    --calculate-per-token-loss
    --disable-compute-advantages-and-returns
@@ -76,7 +76,7 @@ PERF_ARGS=(
    --recompute-num-layers 1
 
    --use-dynamic-batch-size
-   --max-tokens-per-gpu 32000
+   --max-tokens-per-gpu 64000
 )
 
 OPTIMIZER_ARGS=(
@@ -112,11 +112,11 @@ MISC_ARGS=(
    # should be good for model performance
    --accumulate-allreduce-grads-in-fp32
    --attention-softmax-in-fp32
-   # MLA model, do not use flash attention backend
-   # --attention-backend flash
 
-   # TP*EP=1 时 flex dispatcher 不可用，使用 alltoall
-   --moe-token-dispatcher-type alltoall
+   --attention-backend flash
+
+   --moe-enable-deepep                                          
+   --moe-token-dispatcher-type flex
 )
 
 # launch the master node of ray in container
@@ -139,7 +139,7 @@ RUNTIME_ENV_JSON="{
 ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json="${RUNTIME_ENV_JSON}" \
    -- python3 /jpfs/chenyanxu.9/slime_optim/train_async.py \
-   --actor-num-nodes 8 \
+   --actor-num-nodes 4 \
    --actor-num-gpus-per-node 8 \
    ${MODEL_ARGS[@]} \
    ${CKPT_ARGS[@]} \
