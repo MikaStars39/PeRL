@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Qwen3-8B RL training with DAPO (GRPO + asymmetric clipping + dynamic sampling)
+# Qwen3-8B RL training with DAPO — FULLY ASYNC (off-policy)
 # Model: Qwen3-8B-Base-sft-dolci-think
 # Dataset: Polaris-Dataset-53K (math)
-# Backend: Megatron (4 nodes, 32 GPUs)
+# Backend: Megatron (8 nodes, 64 GPUs)
 
 set -ex
 
@@ -24,7 +24,7 @@ SCRIPT_DIR="${PROJECT_DIR}/scripts"
 HF_CKPT="/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think/iter_0005375-hf"
 MEGATRON_CKPT="/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think/iter_0005375_torch_dist" 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S) # TODO: fill in your megatron ckpt path
-SAVE_DIR="${SAVE_DIR:-/jpfs-5p/chenyanxu.9/model/Qwen3-8B-onpolicy-profiling-${TIMESTAMP}}"
+SAVE_DIR="${SAVE_DIR:-/jpfs-5p/chenyanxu.9/model/Qwen3-8B-offpolicy-profiling-${TIMESTAMP}}"
 DATA_PATH="/jpfs-5p/qingyu/data/profiling_20260402181029/filtered.jsonl"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -46,6 +46,7 @@ CKPT_ARGS=(
 # prompt is already in chat format: [{role: user, content: ...}]
 # solution is the ground truth answer (number or latex expression)
 ROLLOUT_ARGS=(
+   --rollout-function-path fully_async_rollout.generate_rollout_fully_async
    --prompt-data ${DATA_PATH}
    --input-key prompt
    --label-key answer
@@ -77,6 +78,8 @@ GRPO_ARGS=(
    --eps-clip-high 0.28
    # DAPO dynamic sampling: filter out prompts where all samples have same reward
    --dynamic-sampling-filter-path slime.rollout.filter_hub.dynamic_sampling_filters.check_reward_nonzero_std
+   # off-policy importance sampling correction
+   --use-tis
 )
 
 # ---- optimizer (Adam) ----
@@ -92,7 +95,7 @@ OPTIMIZER_ARGS=(
 # ---- sglang rollout engine ----
 SGLANG_ARGS=(
    --rollout-num-gpus-per-engine 1
-   --rollout-num-gpus 64
+   --rollout-num-gpus 48
    --sglang-mem-fraction-static 0.8
 
 )
@@ -115,14 +118,14 @@ PERF_ARGS=(
 
 # ---- misc ----
 MISC_ARGS=(
-   --actor-num-nodes 8
+   --actor-num-nodes 2
    --actor-num-gpus-per-node 8
    --attention-dropout 0.0
    --hidden-dropout 0.0
    --accumulate-allreduce-grads-in-fp32
    --attention-softmax-in-fp32
    --attention-backend flash
-   --colocate
+   # NOTE: --colocate removed — async training does not support colocate
 )
 EVAL_ARGS=(
    --eval-interval 32
@@ -153,7 +156,7 @@ export no_proxy="127.0.0.1,${MASTER_ADDR}"
 
 RUNTIME_ENV_JSON="{
   \"env_vars\": {
-    \"PYTHONPATH\": \"${MEGATRON_PATH}/\",
+    \"PYTHONPATH\": \"${MEGATRON_PATH}/:${PROJECT_DIR}/examples/fully_async\",
     \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\",
     \"NCCL_NVLS_ENABLE\": \"${HAS_NVLINK}\",
     \"WANDB_API_KEY\": \"${WANDB_API_KEY}\",
@@ -163,7 +166,7 @@ RUNTIME_ENV_JSON="{
 
 ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json="${RUNTIME_ENV_JSON}" \
-   -- python3 ${PROJECT_DIR}/train.py \
+   -- python3 ${PROJECT_DIR}/train_async.py \
    ${EVAL_ARGS[@]} \
    ${MODEL_ARGS[@]} \
    ${CKPT_ARGS[@]} \
