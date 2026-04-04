@@ -19,7 +19,7 @@ echo "HAS_NVLINK: $HAS_NVLINK (detected $NVLINK_COUNT NVLink references)"
 
 # ---- paths (edit these) ----
 PROJECT_DIR=${PROJECT_DIR:-"/jpfs/chenyanxu.9/PeRL/modules/slime"}
-MEGATRON_PATH=${MEGATRON_PATH:-"/root/Megatron-LM"}
+MEGATRON_PATH=${MEGATRON_PATH:-"/jpfs/chenyanxu.9/PeRL/modules/Megatron-LM"}
 SCRIPT_DIR="${PROJECT_DIR}/scripts"
 HF_CKPT="/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think/iter_0005375-hf"
 MEGATRON_CKPT="/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think/iter_0005375_torch_dist" 
@@ -131,13 +131,13 @@ MISC_ARGS=(
    --attention-backend flash
    # NOTE: --colocate removed — async training does not support colocate
 )
-EVAL_ARGS=(
-   --eval-interval 32
-   --eval-prompt-data aime /jpfs-5p/qingyu/data/aime-2024.jsonl
-   --n-samples-per-eval-prompt 16
-   --eval-max-response-len 31000
-   --eval-top-p 0.95
-)
+# EVAL_ARGS=(
+#    --eval-interval 32
+#    --eval-prompt-data aime /jpfs-5p/qingyu/data/aime-2024.jsonl
+#    --n-samples-per-eval-prompt 16
+#    --eval-max-response-len 31000
+#    --eval-top-p 0.95
+# )
 
 unset http_proxy
 unset https_proxy
