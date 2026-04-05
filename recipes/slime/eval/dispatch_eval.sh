@@ -6,7 +6,7 @@
 #   例: bash dispatch_eval.sh cyx-eval
 #
 # 逻辑:
-#   1. 扫描多个模型目录的 checkpoint，按 ~1000 步间隔采样
+#   1. 扫描多个模型目录的所有 checkpoint
 #   2. 均匀分配到 pod，每个 pod 后台执行 eval_worker.sh
 #   3. 等待全部完成
 #
@@ -18,8 +18,7 @@ MODEL_BASES=(
     "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-offpolicy-profiling-20260403_140508"
     "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-cispo-rl-20260404_011732"
 )
-WORKER_SCRIPT="/jpfs/chenyanxu.9/PeRL_cyx/recipes/cyx_recipe/eval/eval_worker.sh"
-STEP_INTERVAL=1000          # 采样间隔（步）
+WORKER_SCRIPT="/jpfs/chenyanxu.9/PeRL/recipes/slime/eval/eval_worker.sh"
 NAMESPACE="${NAMESPACE:-explore-train}"
 NUM_PODS=4
 
@@ -57,25 +56,16 @@ for MODEL_BASE in "${MODEL_BASES[@]}"; do
         continue
     fi
 
-    # 按 STEP_INTERVAL 采样
-    SAMPLED=()
-    LAST_SAMPLED=-99999
+    echo "[INFO]   ${MODEL_BASE##*/}: found ${#ALL_ITERS[@]} ckpts"
+
     for num in "${ALL_ITERS[@]}"; do
-        if (( num - LAST_SAMPLED >= STEP_INTERVAL )); then
-            SAMPLED+=("$num")
-            LAST_SAMPLED=$num
+        ITER_PADDED=$(printf "iter_%07d" "$num")
+        HF_DIR="${MODEL_BASE}/${ITER_PADDED}-hf"
+        if [ -f "${HF_DIR}/eval_results.json" ]; then
+            echo "[SKIP] ${MODEL_BASE##*/}/${ITER_PADDED} already evaluated"
+        else
+            TODO+=("${MODEL_BASE}:${num}")
         fi
-    done
-    # 确保最后一个 ckpt 也包含
-    LAST_ITER="${ALL_ITERS[-1]}"
-    if (( LAST_ITER - LAST_SAMPLED >= STEP_INTERVAL / 2 )); then
-        SAMPLED+=("$LAST_ITER")
-    fi
-
-    echo "[INFO]   ${MODEL_BASE##*/}: sampled ${#SAMPLED[@]} ckpts: ${SAMPLED[*]}"
-
-    for num in "${SAMPLED[@]}"; do
-        TODO+=("${MODEL_BASE}:${num}")
     done
 done
 

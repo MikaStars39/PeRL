@@ -6,6 +6,8 @@
 #   例: bash eval_worker.sh /path/to/model:1151 /path/to/model:2175
 #
 set -euo pipefail
+pkill -9 python
+pkill -9 sglang
 
 # ========== 配置 ==========
 ORIGIN_HF="/jpfs/chenyanxu.9/model/zhennanshen/Qwen3-8B-Base"
@@ -28,8 +30,14 @@ for TASK in "$@"; do
     HF_DIR="${MODEL_BASE}/${ITER_PADDED}-hf"
 
     echo "============================================================"
-    echo "[INFO] Processing ${ITER_PADDED} ..."
+    echo "[INFO] Processing ${MODEL_BASE##*/}/${ITER_PADDED} ..."
     echo "============================================================"
+
+    # ---------- 跳过已有结果的 ----------
+    if [ -f "${HF_DIR}/eval_results.json" ]; then
+        echo "[SKIP] ${ITER_PADDED} 已有 eval_results.json，跳过"
+        continue
+    fi
 
     # ---------- 1. Convert (如果 -hf 目录不存在) ----------
     if [ ! -d "${HF_DIR}" ] || [ ! -f "${HF_DIR}/config.json" ]; then
