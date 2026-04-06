@@ -23,6 +23,6 @@ PYTHONPATH=/root/Megatron-LM torchrun --nproc_per_node=8 \
     ${PROJECT_DIR}/tools/convert_hf_to_torch_dist.py \
     ${MODEL_ARGS[@]} \
     ${PARALLEL_ARGS[@]} \
-    --hf-checkpoint /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-dolci-think-yarn-32k/iter_0004351-hf \
-    --save /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-dolci-think-yarn-32k/iter_0004351_torch_dist
+    --hf-checkpoint /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-cpt-yarn-32k/iter_0002711-hf \
+    --save /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-cpt-yarn-32k/iter_0002711_torch_dist
 

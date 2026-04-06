@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 
 # ========== 配置 ==========
 MODEL_BASES = [
-    "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think",
+    "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-onpolicy-profiling-20260403_091551",
 ]
 
 # 从目录名提取简短标签

@@ -32,9 +32,9 @@ SCRIPT_DIR="/jpfs/chenyanxu.9/slime_optim/scripts"
 source "${SCRIPT_DIR}/models/moonlight.sh"
 
 CKPT_ARGS=(
-   --hf-checkpoint /jpfs/chenyanxu.9/model/Moonlight-16B-A3B
-   --load /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-dolci-think-yarn-32k
-   --save /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-dolci-think-yarn-32k
+   --hf-checkpoint /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-cpt-yarn-32k/iter_0002711-hf
+   --load /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-cpt-yarn-32k/iter_0002711_torch_dist
+   --save /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-sft-muon-yarn-32k_0002711
    --save-interval 128
 )
 
@@ -61,7 +61,7 @@ SFT_ARGS=(
    --num-epoch 5
    --rollout-batch-size 256
    --global-batch-size 256
-   --seq-length 32768
+   --seq-length 32000
    --rollout-max-context-len 32000
 
    --loss-type sft_loss
@@ -146,7 +146,7 @@ RUNTIME_ENV_JSON="{
 ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json="${RUNTIME_ENV_JSON}" \
    -- python3 /jpfs/chenyanxu.9/slime_optim/train_async.py \
-   --actor-num-nodes 8 \
+   --actor-num-nodes 16 \
    --actor-num-gpus-per-node 8 \
    ${MODEL_ARGS[@]} \
    ${CKPT_ARGS[@]} \

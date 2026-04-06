@@ -23,7 +23,7 @@ source "${SCRIPT_DIR}/models/moonlight.sh"
 
 CKPT_ARGS=(
    --hf-checkpoint /jpfs/chenyanxu.9/model/Moonlight-16B-A3B
-   --load /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-cpt-yarn-32k
+   --load /jpfs/chenyanxu.9/model/Moonlight-16B-A3B/Moonlight-16B-A3B_torch_dist
    --save /jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-cpt-yarn-32k
    --save-interval 128
 )

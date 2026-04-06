@@ -15,8 +15,6 @@ set -uo pipefail
 # ========== 配置 ==========
 MODEL_BASES=(
     "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-onpolicy-profiling-20260403_091551"
-    "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-offpolicy-profiling-20260403_140508"
-    "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-cispo-rl-20260404_011732"
 )
 WORKER_SCRIPT="/jpfs/chenyanxu.9/PeRL/recipes/slime/eval/eval_worker.sh"
 NAMESPACE="${NAMESPACE:-explore-train}"

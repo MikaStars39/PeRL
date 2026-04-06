@@ -26,7 +26,7 @@ MEGATRON_CKPT="/jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-dolci-think-yarn-32k
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 SAVE_DIR="${SAVE_DIR:-/jpfs-5p/chenyanxu.9/model/Moonlight-16B-A3B-dapo-rl-${TIMESTAMP}}"
 DATA_PATH="/jpfs/chenyanxu.9/data/Polaris-V2-RL-14K/train-00000-of-00001.parquet"
-
+LOG_DIR=${SAVE_DIR}/output.log
 mkdir -p ${SAVE_DIR}
 
 # ---- model architecture (Moonlight-16B-A3B) ----
@@ -180,4 +180,4 @@ ray job submit --address="http://127.0.0.1:8265" \
    ${SGLANG_ARGS[@]} \
    ${PERF_ARGS[@]} \
    ${MISC_ARGS[@]} \
-   ${WANDB_ARGS[@]}
+   ${WANDB_ARGS[@]} 2>&1 | tee ${LOG_DIR}

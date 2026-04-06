@@ -26,7 +26,7 @@ MEGATRON_CKPT="/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think/iter_000
 TIMESTAMP=$(date +%Y%m%d_%H%M%S) # TODO: fill in your megatron ckpt path
 SAVE_DIR="${SAVE_DIR:-/jpfs-5p/chenyanxu.9/model/Qwen3-8B-onpolicy-profiling-${TIMESTAMP}}"
 DATA_PATH="/jpfs-5p/qingyu/data/profiling_20260402181029/filtered.jsonl"
-
+LOG_DIR=${SAVE_DIR}/output.log
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 mkdir -p ${SAVE_DIR}
 
@@ -174,4 +174,4 @@ ray job submit --address="http://127.0.0.1:8265" \
    ${SGLANG_ARGS[@]} \
    ${PERF_ARGS[@]} \
    ${MISC_ARGS[@]} \
-   ${WANDB_ARGS[@]}
+   ${WANDB_ARGS[@]} 2>&1 | tee ${LOG_DIR}
