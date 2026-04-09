@@ -90,6 +90,7 @@ OPTIMIZER_ARGS=(
    --weight-decay 0.1
    --adam-beta1 0.9
    --adam-beta2 0.98
+   --adam-eps 1e-15
 )
 
 # ---- sglang rollout engine ----

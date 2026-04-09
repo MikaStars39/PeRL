@@ -46,7 +46,8 @@ for TASK in "$@"; do
         PYTHONPATH=/root/Megatron-LM python tools/convert_torch_dist_to_hf.py \
             --input-dir "${INPUT_DIR}" \
             --output-dir "${HF_DIR}" \
-            --origin-hf-dir "${ORIGIN_HF}"
+            --origin-hf-dir "${ORIGIN_HF}" \
+            --force
         echo "[OK] Convert done: ${HF_DIR}"
     else
         echo "[SKIP] ${ITER_PADDED}-hf 已存在，跳过转换"

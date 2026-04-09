@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Qwen3-8B RL training with DAPO (GRPO + asymmetric clipping + dynamic sampling)
+# Qwen3-8B RL training with DAPO — FULLY ASYNC (off-policy) — Roo optimizer
 # Model: Qwen3-8B-Base-sft-dolci-think
 # Dataset: Polaris-Dataset-53K (math)
-# Backend: Megatron (4 nodes, 32 GPUs)
+# Backend: Megatron (8 nodes, 64 GPUs)
+# Optimizer: Roo (Matrix Natural Gradient)
 
 set -ex
 
@@ -19,13 +20,13 @@ echo "HAS_NVLINK: $HAS_NVLINK (detected $NVLINK_COUNT NVLink references)"
 
 # ---- paths (edit these) ----
 PROJECT_DIR=${PROJECT_DIR:-"/jpfs/chenyanxu.9/PeRL/modules/slime"}
-MEGATRON_PATH=${MEGATRON_PATH:-"/root/Megatron-LM"}
+MEGATRON_PATH=${MEGATRON_PATH:-"/jpfs/chenyanxu.9/PeRL/modules/Megatron-LM"}
 SCRIPT_DIR="${PROJECT_DIR}/scripts"
 HF_CKPT="/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think/iter_0005375-hf"
-MEGATRON_CKPT="/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think/iter_0005375_torch_dist" 
-TIMESTAMP=$(date +%Y%m%d_%H%M%S) # TODO: fill in your megatron ckpt path
-SAVE_DIR="${SAVE_DIR:-/jpfs-5p/chenyanxu.9/model/Qwen3-8B-dapo-rl-${TIMESTAMP}}"
-DATA_PATH="/jpfs/chenyanxu.9/data/Polaris-V2-RL-14K/train-00000-of-00001.parquet"
+MEGATRON_CKPT="/jpfs-5p/chenyanxu.9/model/Qwen3-8B-Base-sft-dolci-think/iter_0005375_torch_dist"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+SAVE_DIR="${SAVE_DIR:-/jpfs-5p/chenyanxu.9/model/Qwen3-8B-offpolicy-roo-${TIMESTAMP}}"
+DATA_PATH="/jpfs-5p/qingyu/data/profiling_20260402181029/filtered.jsonl"
 LOG_DIR=${SAVE_DIR}/output.log
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 mkdir -p ${SAVE_DIR}
@@ -42,10 +43,8 @@ CKPT_ARGS=(
 )
 
 # ---- rollout & data ----
-# Dataset format: parquet with fields {problem, solution, difficulty, prompt}
-# prompt is already in chat format: [{role: user, content: ...}]
-# solution is the ground truth answer (number or latex expression)
 ROLLOUT_ARGS=(
+   --rollout-function-path fully_async_rollout.generate_rollout_fully_async
    --prompt-data ${DATA_PATH}
    --input-key prompt
    --label-key answer
@@ -53,38 +52,61 @@ ROLLOUT_ARGS=(
    --rollout-shuffle
    --balance-data
    --num-rollout 2000
-   --rollout-batch-size 32
+   --rollout-batch-size 64
+   --over-sampling-batch-size 96
    --n-samples-per-prompt 8
    --rollout-max-response-len 30000
    --rollout-temperature 1.0
-   --global-batch-size 256
+   --global-batch-size 128
+   --partial-rollout
+   --mask-offpolicy-in-partial-rollout
 )
 
 # ---- reward ----
-# deepscaler: extracts answer after </think>, then \boxed{} from model output,
-# compares with label via mathd normalization + sympy simplification
 RM_ARGS=(
    --rm-type deepscaler
 )
 
-# ---- DAPO / GRPO algorithm ----
-GRPO_ARGS=(
+# ---- CISPO algorithm ----
+# Key difference from DAPO/GRPO:
+#   - Uses custom_loss with CISPO loss function
+#   - eps-clip-high is the raw upper bound for IS ratio (e.g. 5.0),
+#     NOT the 1+ε offset used in DAPO (which would be 1.28)
+#   - CISPO clips IS weights with upper bound only, no lower bound
+#   - Clipped IS weights are detached (stop-gradient)
+#   - Gradients flow for ALL tokens (no trust-region cutoff)
+ALGO_ARGS=(
    --advantage-estimator grpo
+   --loss-type custom_loss
+   --custom-loss-function-path examples.cispo.cispo_loss.cispo_loss_function
    --kl-coef 0.00
    --entropy-coef 0.00
-   # DAPO asymmetric clipping
-   --eps-clip 0.2
-   --eps-clip-high 0.28
-   # DAPO dynamic sampling: filter out prompts where all samples have same reward
+   # CISPO upper bound for IS ratio (from ScaleRL, arxiv:2510.13786)
+   --eps-clip-high 5.0
+   # Dynamic sampling: filter prompts where all samples have same reward
    --dynamic-sampling-filter-path slime.rollout.filter_hub.dynamic_sampling_filters.check_reward_nonzero_std
+   # off-policy importance sampling correction (ICEPoP: reject tokens outside clip range)
+   --use-tis
+   --custom-tis-function-path slime.backends.megatron_utils.loss.icepop_function
+   --tis-clip 5.0
+   --tis-clip-low 0.5
 )
 
-# ---- optimizer (Adam) ----
+# ---- optimizer (Roo — Matrix Natural Gradient) ----
+# Roo uses spectral transform f(σ)=σ/(σ²+ε²) on momentum via Gram matrix inversion.
+# Linear (2D) params use Roo; nonlinear params (embeddings, biases, norms) use Adam internally.
 OPTIMIZER_ARGS=(
-   --optimizer adam
+   --optimizer roo
    --lr 1e-6
    --lr-decay-style constant
    --weight-decay 0.1
+   --roo-momentum 0.95
+   --roo-epsilon 0.01
+   --roo-num-ns-steps 5
+   --roo-scale-factor 1.0
+   --roo-tp-mode allreduce_gram
+   --roo-fp32-matmul-prec medium
+   # Adam defaults for nonlinear params (embeddings, biases, norms)
    --adam-beta1 0.9
    --adam-beta2 0.98
    --adam-eps 1e-15
@@ -93,12 +115,13 @@ OPTIMIZER_ARGS=(
 # ---- sglang rollout engine ----
 SGLANG_ARGS=(
    --rollout-num-gpus-per-engine 1
-   --rollout-num-gpus 24
-   --sglang-mem-fraction-static 0.8
-
+   --rollout-num-gpus 48
+   --sglang-mem-fraction-static 0.85
+   --sglang-server-concurrency 256
 )
 
 # ---- performance / parallelism ----
+# NOTE: Roo does NOT support --use-distributed-optimizer (removed)
 PERF_ARGS=(
    --tensor-model-parallel-size 1
    --sequence-parallel
@@ -108,29 +131,20 @@ PERF_ARGS=(
    --expert-tensor-parallel-size 1
    --recompute-granularity full
    --recompute-method uniform
-   --recompute-num-layers 1
-   --use-distributed-optimizer
+   --recompute-num-layers 2
    --use-dynamic-batch-size
    --max-tokens-per-gpu 30000
 )
 
 # ---- misc ----
 MISC_ARGS=(
-   --actor-num-nodes 4
+   --actor-num-nodes 2
    --actor-num-gpus-per-node 8
    --attention-dropout 0.0
    --hidden-dropout 0.0
    --accumulate-allreduce-grads-in-fp32
    --attention-softmax-in-fp32
    --attention-backend flash
-   --colocate
-)
-EVAL_ARGS=(
-   --eval-interval 32
-   --eval-prompt-data aime /jpfs-5p/qingyu/data/aime-2024.jsonl
-   --n-samples-per-eval-prompt 16
-   --eval-max-response-len 30000
-   --eval-top-p 0.95
 )
 
 unset http_proxy
@@ -143,8 +157,8 @@ wandb login --relogin --host=http://11.71.1.218:8082 ${WANDB_API_KEY}
 
 WANDB_ARGS=(
    --use-wandb
-   --wandb-project slime-sft
-   --wandb-group qwen3-8b-dolci-think-rl-dapo
+   --wandb-project slime-rl-optim
+   --wandb-group roo-cispo
 )
 
 
@@ -154,23 +168,24 @@ export no_proxy="127.0.0.1,${MASTER_ADDR}"
 
 RUNTIME_ENV_JSON="{
   \"env_vars\": {
-    \"PYTHONPATH\": \"${MEGATRON_PATH}/\",
+    \"PYTHONPATH\": \"${MEGATRON_PATH}/:${PROJECT_DIR}/examples/fully_async\",
     \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\",
     \"NCCL_NVLS_ENABLE\": \"${HAS_NVLINK}\",
     \"WANDB_API_KEY\": \"${WANDB_API_KEY}\",
-    \"WANDB_BASE_URL\": \"http://11.71.1.218:8082\"
+    \"WANDB_BASE_URL\": \"http://11.71.1.218:8082\",
+    \"PYTORCH_CUDA_ALLOC_CONF\": \"expandable_segments:True\"
   }
 }"
 
 ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json="${RUNTIME_ENV_JSON}" \
-   -- python3 ${PROJECT_DIR}/train.py \
+   -- python3 ${PROJECT_DIR}/train_async.py \
    ${EVAL_ARGS[@]} \
    ${MODEL_ARGS[@]} \
    ${CKPT_ARGS[@]} \
    ${ROLLOUT_ARGS[@]} \
    ${RM_ARGS[@]} \
-   ${GRPO_ARGS[@]} \
+   ${ALGO_ARGS[@]} \
    ${OPTIMIZER_ARGS[@]} \
    ${SGLANG_ARGS[@]} \
    ${PERF_ARGS[@]} \

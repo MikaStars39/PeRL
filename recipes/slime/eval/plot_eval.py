@@ -21,15 +21,21 @@ import matplotlib.pyplot as plt
 
 # ========== 配置 ==========
 MODEL_BASES = [
-    "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-onpolicy-profiling-20260403_091551",
+    "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-onpolicy-profiling-muon-projected-20260408_131541",
+    "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-onpolicy-profiling-muon-20260407_142933",
+    "/jpfs-5p/chenyanxu.9/model/Qwen3-8B-onpolicy-profiling-20260403_091551"
 ]
 
-# 从目录名提取简短标签
+# 从目录名提取图例标签（去掉固定前缀与末尾时间戳，避免多条曲线重名）
 def short_label(path):
-    name = os.path.basename(path)
-    # e.g. Qwen3-8B-onpolicy-profiling-20260403_091551 -> onpolicy
-    m = re.search(r"Qwen3-8B-(.+?)-(?:profiling|rl)", name)
-    return m.group(1) if m else name
+    name = os.path.basename(path.rstrip("/"))
+    # e.g. Qwen3-8B-onpolicy-profiling-muon-projected-20260408_131541
+    #   -> onpolicy-profiling-muon-projected
+    # 旧写法 Qwen3-8B-(.+?)-(?:profiling|rl) 会在第一个 "-profiling" 处截断，三段路径都得到
+    # "onpolicy"，dict 里后写入覆盖前写入，图上只剩一条线。
+    stem = re.sub(r"^Qwen3-8B-", "", name)
+    stem = re.sub(r"-\d{8}_\d{6}$", "", stem)
+    return stem if stem else name
 
 
 def load_results(model_base):

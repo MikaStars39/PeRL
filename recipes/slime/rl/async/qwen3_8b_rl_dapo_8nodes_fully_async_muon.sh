@@ -73,50 +73,65 @@ RM_ARGS=(
    --rm-type deepscaler
 )
 
-# ---- DAPO / GRPO algorithm ----
-GRPO_ARGS=(
+# ---- CISPO algorithm ----
+# Key difference from DAPO/GRPO:
+#   - Uses custom_loss with CISPO loss function
+#   - eps-clip-high is the raw upper bound for IS ratio (e.g. 5.0),
+#     NOT the 1+ε offset used in DAPO (which would be 1.28)
+#   - CISPO clips IS weights with upper bound only, no lower bound
+#   - Clipped IS weights are detached (stop-gradient)
+#   - Gradients flow for ALL tokens (no trust-region cutoff)
+ALGO_ARGS=(
    --advantage-estimator grpo
+   --loss-type custom_loss
+   --custom-loss-function-path examples.cispo.cispo_loss.cispo_loss_function
    --kl-coef 0.00
    --entropy-coef 0.00
-   # DAPO asymmetric clipping
-   --eps-clip 0.2
-   --eps-clip-high 0.28
-   # DAPO dynamic sampling: filter out prompts where all samples have same reward
+   # CISPO upper bound for IS ratio (from ScaleRL, arxiv:2510.13786)
+   --eps-clip-high 5.0
+   # Dynamic sampling: filter prompts where all samples have same reward
    --dynamic-sampling-filter-path slime.rollout.filter_hub.dynamic_sampling_filters.check_reward_nonzero_std
-   # off-policy importance sampling correction
+   # off-policy importance sampling correction (ICEPoP: reject tokens outside clip range)
    --use-tis
+   --custom-tis-function-path slime.backends.megatron_utils.loss.icepop_function
+   --tis-clip 5.0
+   --tis-clip-low 0.5
 )
 
-# ---- optimizer (Adam) ----
+# ---- optimizer (Muon) ----
 OPTIMIZER_ARGS=(
    --optimizer muon
-   --lr 5e-5
+   --lr 1e-6
    --lr-decay-style constant
-   --weight-decay 0.01
+   --weight-decay 0.1
    --muon-momentum 0.95
    --muon-num-ns-steps 5
    --muon-scale-mode spectral
    --muon-extra-scale-factor 0.2
+   --adam-beta1 0.9
+   --adam-beta2 0.98
+   --adam-eps 1e-15
 )
 
 # ---- sglang rollout engine ----
 SGLANG_ARGS=(
    --rollout-num-gpus-per-engine 1
-   --rollout-num-gpus 96
+   --rollout-num-gpus 48
    --sglang-mem-fraction-static 0.85
+   --sglang-server-concurrency 256
 )
 
 # ---- performance / parallelism ----
 PERF_ARGS=(
-   --tensor-model-parallel-size 2
+   --tensor-model-parallel-size 1
    --sequence-parallel
-   --pipeline-model-parallel-size 1
+   --pipeline-model-parallel-size 2
    --context-parallel-size 1
    --expert-model-parallel-size 1
    --expert-tensor-parallel-size 1
    --recompute-granularity full
    --recompute-method uniform
-   --recompute-num-layers 1
+   --recompute-num-layers 2
    --use-distributed-optimizer
    --use-dynamic-batch-size
    --max-tokens-per-gpu 30000
@@ -124,7 +139,7 @@ PERF_ARGS=(
 
 # ---- misc ----
 MISC_ARGS=(
-   --actor-num-nodes 4
+   --actor-num-nodes 2
    --actor-num-gpus-per-node 8
    --attention-dropout 0.0
    --hidden-dropout 0.0
@@ -152,7 +167,7 @@ wandb login --relogin --host=http://11.71.1.218:8082 ${WANDB_API_KEY}
 WANDB_ARGS=(
    --use-wandb
    --wandb-project slime-rl-optim
-   --wandb-group qwen3-8b-offpolicy-profiling-8nodes-muon
+   --wandb-group muon-cispo
 )
 
 
@@ -166,7 +181,8 @@ RUNTIME_ENV_JSON="{
     \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\",
     \"NCCL_NVLS_ENABLE\": \"${HAS_NVLINK}\",
     \"WANDB_API_KEY\": \"${WANDB_API_KEY}\",
-    \"WANDB_BASE_URL\": \"http://11.71.1.218:8082\"
+    \"WANDB_BASE_URL\": \"http://11.71.1.218:8082\",
+    \"PYTORCH_CUDA_ALLOC_CONF\": \"expandable_segments:True\"
   }
 }"
 
@@ -178,7 +194,7 @@ ray job submit --address="http://127.0.0.1:8265" \
    ${CKPT_ARGS[@]} \
    ${ROLLOUT_ARGS[@]} \
    ${RM_ARGS[@]} \
-   ${GRPO_ARGS[@]} \
+   ${ALGO_ARGS[@]} \
    ${OPTIMIZER_ARGS[@]} \
    ${SGLANG_ARGS[@]} \
    ${PERF_ARGS[@]} \
