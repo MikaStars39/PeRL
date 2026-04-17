@@ -205,6 +205,7 @@ PEFT_TYPE_TO_FUNCTION_MAPPING = {
     "miss": apply_miss,
     "pissa": apply_pissa,
     "hra": apply_hra,
+    "rslora": apply_rslora,
 }
 
 # ------------------------------ dispatch function to peft type ------------------------------

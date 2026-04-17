@@ -7,7 +7,7 @@ from transformers import AutoTokenizer
 
 def load_dataset(dataset_name_or_path: str, example_numbers: int = None, tokenizer: AutoTokenizer = None):
     dataset_name_lower = dataset_name_or_path.lower()
-    if "r1" in dataset_name_lower:
+    if "r1" in dataset_name_lower or "dapo" in dataset_name_lower:
         return load_openr1_dataset(dataset_name_or_path, example_numbers)
     elif "tinyzero" in dataset_name_lower:
         return load_tinyzero_dataset(dataset_name_or_path, example_numbers)
