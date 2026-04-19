@@ -48,36 +48,42 @@ def initialize_lora_layer(weights, rank, mode="min"):
     return A, B, delta
 
 
-def add_svd_initialized_lora(model, 
-                           rank=64, 
-                           mode="min", 
+def add_svd_initialized_lora(model,
+                           rank=64,
+                           mode="min",
+                           lora_alpha=None,
+                           lora_dropout=None,
+                           target_modules=None,
                            hyper_param_type="LLM-Adapters",
                            ):
     """
     Add SVD-initialized LoRA adapters to a HuggingFace model
-    
+
     Args:
         model: HuggingFace pretrained model
         rank (int): LoRA rank size, default 64
         mode (str): SVD mode, options "min", "max", "mid", "random", default "min"
-        hyper_param_type (str): hyperparameter type, options "LLM-Adapters", "QLoRA", default "LLM-Adapters"
-        device (str): device, if None auto-detect
-        
+        lora_alpha (int): LoRA alpha, overrides hyper_param_type default
+        lora_dropout (float): LoRA dropout, overrides hyper_param_type default
+        target_modules (list): target modules, overrides hyper_param_type default
+        hyper_param_type (str): preset defaults, options "LLM-Adapters", "QLoRA"
+
     Returns:
         model: model with SVD-initialized LoRA
     """
-    
-    # Set config based on hyperparameter type
+
+    # Preset defaults
     if hyper_param_type == "LLM-Adapters":
-        lora_alpha = rank
-        lora_dropout = 0.05
-        target_modules = ["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]
+        _alpha, _dropout, _modules = rank, 0.05, ["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]
     elif hyper_param_type == "QLoRA":
-        lora_alpha = rank
-        lora_dropout = 0.1
-        target_modules = ['q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj']
+        _alpha, _dropout, _modules = rank, 0.1, ['q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj']
     else:
         raise ValueError(f"Unknown hyper_param_type: {hyper_param_type}")
+
+    # Explicit args override presets
+    lora_alpha = lora_alpha if lora_alpha is not None else _alpha
+    lora_dropout = lora_dropout if lora_dropout is not None else _dropout
+    target_modules = target_modules if target_modules is not None else _modules
     
     # Create LoRA config
     peft_config = LoraConfig(

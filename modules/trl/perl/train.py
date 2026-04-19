@@ -27,10 +27,9 @@ def fuzzy_jobs(
     if args.common.debug:
         args.training.report_to = []
 
-    # only initialize for rank 0 when process group is available
-    is_main_process = True
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
-        is_main_process = torch.distributed.get_rank() == 0
+    # Determine main process: LOCAL_RANK is always set by accelerate/torchrun
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    is_main_process = (local_rank == 0)
 
     if is_main_process:
         if "trackio" in args.training.report_to:
@@ -41,13 +40,7 @@ def fuzzy_jobs(
                 config=vars(args.training)
             )
             logger.info(f"Trackio initialized successfully")
-        elif "wandb" in args.training.report_to:
-            import wandb
-            wandb.init(
-                name=args.training.run_name,
-                config=vars(args.training),
-            )
-            logger.info(f"Wandb initialized successfully")
+        # wandb is managed by Trainer via report_to; no manual init needed
 
     return args
 

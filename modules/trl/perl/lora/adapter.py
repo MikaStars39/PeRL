@@ -59,6 +59,9 @@ def apply_milora(model, args):
     return None, add_svd_initialized_lora(
         model=model,
         rank=args.peft.r,
+        lora_alpha=args.peft.lora_alpha,
+        lora_dropout=args.peft.lora_dropout,
+        target_modules=args.peft.target_modules,
     )
 
 def apply_layernorm(model, args):

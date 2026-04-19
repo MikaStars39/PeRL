@@ -1,9 +1,7 @@
 unset WANDB_DISABLED
-export WANDB_API_KEY=local-b0d90ad40bfaa2dd58fa4525f18c82ccb8aca2c6
-export WANDB_BASE_URL=http://11.71.1.218:8082
-export WANDB_ENTITY=automl
+set -a && source .env && set +a
 
-OUTPUT_DIR=outputs/grpo_lora_qwen1_5b_8gpu_$(date +%Y%m%d_%H%M%S)
+OUTPUT_DIR=outputs/grpo_full_qwen1_5b_8gpu_$(date +%Y%m%d_%H%M%S)
 LOG_FILE=${OUTPUT_DIR}/output.log
 
 mkdir -p ${OUTPUT_DIR}
@@ -17,15 +15,15 @@ ACCELERATE_LOG_LEVEL=info \
     --config.common.debug false \
     --config.model.model_name_or_path "/mnt/llm-train-5p/shenzhennan/models/DeepSeek-R1-Distill-Qwen-1.5B" \
     --config.model.dtype "bfloat16" \
-    --config.peft.use_peft true \
+    --config.peft.use_peft false \
     --config.peft.type "lora" \
     --config.peft.task_type "CAUSAL_LM" \
-    --config.peft.r 16 \
-    --config.peft.lora_alpha 32 \
+    --config.peft.r 32 \
+    --config.peft.lora_alpha 128 \
     --config.peft.lora_dropout 0.05 \
     --config.peft.total_step 1000 \
     --config.peft.target_modules '["q_proj","v_proj","k_proj","o_proj","up_proj","down_proj","gate_proj"]' \
-    --config.training.learning_rate 1e-5 \
+    --config.training.learning_rate 1e-6 \
     --config.training.beta 0.0 \
     --config.training.output_dir "${OUTPUT_DIR}" \
     --config.training.run_name "${OUTPUT_DIR}" \
@@ -52,8 +50,8 @@ ACCELERATE_LOG_LEVEL=info \
     --config.training.loss_type "dapo" \
     --config.training.report_to '["wandb"]' \
     --config.logging.trackio_space_id "Open-Tinker/Open-Tinker" \
-    --config.logging.trackio_project "perl-lora-qwen1.5b" \
-    --config.logging.wandb_project "perl-lora-qwen1.5b" \
+    --config.logging.trackio_project "perl-full-qwen1.5b" \
+    --config.logging.wandb_project "perl-full-qwen1.5b" \
     --config.dataset.dataset_name_or_path "/mnt/llm-train-5p/shenzhennan/datasets/DAPO-Math-17k-Processed/all" \
     --config.dataset.example_numbers 1000000000 \
     2>&1 | tee ${LOG_FILE}
