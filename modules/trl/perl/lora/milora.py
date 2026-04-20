@@ -8,13 +8,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def initialize_lora_layer(weights, rank, mode="min"):
+def initialize_lora_layer(weights, rank, lora_alpha, mode="min"):
     """
     Initialize LoRA layer using SVD decomposition
     """
     U, S, V = torch.linalg.svd(weights, full_matrices=False)
-    lora_alpha = rank
-    
+
     if mode == "min":
         U_select = U[:, -rank:]
         S_select = S[-rank:]
@@ -115,7 +114,7 @@ def add_svd_initialized_lora(model,
                         
                         # Perform SVD initialization
                         lora_A_init, lora_B_init, delta = initialize_lora_layer(
-                            base_weight.float(), rank, mode=mode
+                            base_weight.float(), rank, lora_alpha, mode=mode
                         )
                         
                         # Update weights

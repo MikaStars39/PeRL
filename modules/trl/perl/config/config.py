@@ -61,6 +61,7 @@ class TrainingConfig:
     warmup_ratio: float = 0.0
     per_device_train_batch_size: int = 1
     top_entropy_quantile: float = 0.2
+    gradient_checkpointing: bool = False
 
 @dataclass
 class LoggingConfig:

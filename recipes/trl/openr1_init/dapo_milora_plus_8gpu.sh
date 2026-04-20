@@ -3,7 +3,7 @@ set -a && source .env && set +a
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 
-OUTPUT_DIR=outputs/grpo_lora_qwen1_5b_8gpu_r32_$(date +%Y%m%d_%H%M%S)
+OUTPUT_DIR=outputs/grpo_milora_plus_qwen1_5b_8gpu_$(date +%Y%m%d_%H%M%S)
 LOG_FILE=${OUTPUT_DIR}/output.log
 
 mkdir -p ${OUTPUT_DIR}
@@ -18,7 +18,7 @@ ACCELERATE_LOG_LEVEL=info \
     --config.model.model_name_or_path "/mnt/llm-train-5p/shenzhennan/models/DeepSeek-R1-Distill-Qwen-1.5B" \
     --config.model.dtype "bfloat16" \
     --config.peft.use_peft true \
-    --config.peft.type "lora" \
+    --config.peft.type "milora_plus" \
     --config.peft.task_type "CAUSAL_LM" \
     --config.peft.r 32 \
     --config.peft.lora_alpha 64 \
@@ -47,12 +47,12 @@ ACCELERATE_LOG_LEVEL=info \
     --config.training.lr_scheduler_type "constant" \
     --config.training.lr_scheduler_kwargs.min_lr_rate 0.1 \
     --config.training.vllm_mode "colocate" \
-    --config.training.vllm_gpu_memory_utilization 0.3 \
+    --config.training.vllm_gpu_memory_utilization 0.4 \
     --config.training.use_liger_kernel false \
     --config.training.loss_type "dapo" \
     --config.training.report_to '["wandb"]' \
     --config.logging.trackio_space_id "Open-Tinker/Open-Tinker" \
-    --config.logging.trackio_project "perl-lora-qwen1.5b" \
+    --config.logging.trackio_project "perl-milora-plus-qwen1.5b" \
     --config.logging.wandb_project "PERL_INIT" \
     --config.dataset.dataset_name_or_path "/mnt/llm-train-5p/shenzhennan/datasets/DAPO-Math-17k-Processed/all" \
     --config.dataset.example_numbers 1000000000 \

@@ -2,6 +2,8 @@ unset WANDB_DISABLED
 set -a && source .env && set +a
 export WANDB_RESUME=allow
 export WANDB_RUN_ID=de8r46o7
+unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
+export PYTORCH_ALLOC_CONF=expandable_segments:True
 
 OUTPUT_DIR=outputs/grpo_full_qwen1_5b_8gpu_20260417_093802
 LOG_FILE=${OUTPUT_DIR}/resume_$(date +%Y%m%d_%H%M%S).log
@@ -28,14 +30,15 @@ ACCELERATE_LOG_LEVEL=info \
     --config.training.output_dir "${OUTPUT_DIR}" \
     --config.training.run_name "${OUTPUT_DIR}" \
     --config.training.remove_unused_columns false \
-    --config.training.gradient_accumulation_steps 4 \
+    --config.training.gradient_accumulation_steps 8 \
     --config.training.num_train_epochs 1 \
     --config.training.max_completion_length 16384 \
     --config.training.num_generations 8 \
     --config.training.warmup_ratio 0.0 \
     --config.training.max_prompt_length 512 \
     --config.training.logging_steps 1 \
-    --config.training.per_device_train_batch_size 4 \
+    --config.training.gradient_checkpointing true \
+    --config.training.per_device_train_batch_size 2 \
     --config.training.save_strategy "steps" \
     --config.training.save_steps 64 \
     --config.training.max_steps 1024 \
@@ -45,7 +48,7 @@ ACCELERATE_LOG_LEVEL=info \
     --config.training.lr_scheduler_type "constant" \
     --config.training.lr_scheduler_kwargs.min_lr_rate 0.1 \
     --config.training.vllm_mode "colocate" \
-    --config.training.vllm_gpu_memory_utilization 0.4 \
+    --config.training.vllm_gpu_memory_utilization 0.3 \
     --config.training.use_liger_kernel false \
     --config.training.loss_type "dapo" \
     --config.training.report_to '["wandb"]' \
