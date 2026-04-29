@@ -112,6 +112,7 @@ WANDB_ARGS=(
   --wandb-group $WANDB_GROUP
   --wandb-key $WANDB_API_KEY
   --wandb-host $WANDB_BASE_URL
+  --wandb-mode online
 )
 
 MISC_ARGS=(
