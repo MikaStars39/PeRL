@@ -120,7 +120,7 @@ MISC_ARGS=(
   # should be good for model performance
   --accumulate-allreduce-grads-in-fp32
   --attention-softmax-in-fp32
-  --attention-backend flash
+  --attention-backend auto
 
   --moe-enable-deepep
   --moe-token-dispatcher-type flex
@@ -143,11 +143,13 @@ RUNTIME_ENV_JSON="{
     \"PYTHONPATH\": \"${PYTHONPATH}\",
     \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\",
     \"NCCL_NVLS_ENABLE\": \"${HAS_NVLINK}\",
-    \"PYTORCH_CUDA_ALLOC_CONF\": \"expandable_segments:True\",
+    \"PYTORCH_ALLOC_CONF\": \"expandable_segments:True\",
     \"WANDB_API_KEY\": \"${WANDB_API_KEY}\",
     \"WANDB_BASE_URL\": \"${WANDB_BASE_URL}\",
-    \"WANDB_MODE\": \"online\",
-    \"WANDB_DIR\": \"/tmp/wandb\"
+    \"WANDB_MODE\": \"offline\",
+    \"WANDB_DIR\": \"/tmp/wandb\",
+    \"TORCHDYNAMO_DISABLE\": \"1\",
+    \"TRITON_PTXAS_PATH\": \"/usr/local/cuda/bin/ptxas\"
   }
 }"
 
