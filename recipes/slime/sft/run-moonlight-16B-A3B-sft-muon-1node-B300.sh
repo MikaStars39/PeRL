@@ -110,9 +110,7 @@ WANDB_ARGS=(
   --use-wandb
   --wandb-project $WANDB_PROJECT
   --wandb-group $WANDB_GROUP
-  --wandb-key $WANDB_API_KEY
-  --wandb-host $WANDB_BASE_URL
-  --wandb-mode online
+  --wandb-mode offline
 )
 
 MISC_ARGS=(
